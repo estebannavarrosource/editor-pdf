@@ -1,9 +1,5 @@
-import dynamic from "next/dynamic"
-
-const PdfEditor = dynamic(() => import("@/components/pdf-editor/pdf-editor").then((mod) => mod.PdfEditor), {
-  ssr: false,
-})
+import { PdfEditorClient } from "@/components/pdf-editor/pdf-editor-client"
 
 export default function Page() {
-  return <PdfEditor />
+  return <PdfEditorClient />
 }
