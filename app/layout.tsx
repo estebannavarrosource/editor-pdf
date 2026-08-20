@@ -1,10 +1,23 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
+import { Manrope, JetBrains_Mono } from 'next/font/google'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import './globals.css'
 
+const _manrope = Manrope({
+  subsets: ['latin'],
+  variable: '--font-sans',
+})
+
+const _jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-mono',
+})
+
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
+  title: 'Foliopad — Editor de PDF',
+  description:
+    'Visualiza, anota, firma y manipula tus documentos PDF directamente en el navegador. Exporta a PDF, imagenes o Word.',
   generator: 'v0.app',
   icons: {
     icon: [
@@ -39,9 +52,9 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body className="antialiased">
-        {children}
+    <html lang="es" className={`${_manrope.variable} ${_jetbrainsMono.variable} bg-background`}>
+      <body className="antialiased font-sans">
+        <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
