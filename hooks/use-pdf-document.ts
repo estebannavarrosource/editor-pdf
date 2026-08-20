@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import type { PDFDocumentLoadingTask } from "pdfjs-dist"
 import { getPdfjs, type PdfjsDocument } from "@/lib/pdfjs"
 import type { PageState } from "@/lib/pdf-types"
 
@@ -17,6 +18,7 @@ export function usePdfDocument(bytes: ArrayBuffer | null, version: number): UseP
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const docRef = useRef<PdfjsDocument | null>(null)
+  const loadingTaskRef = useRef<PDFDocumentLoadingTask | null>(null)
 
   useEffect(() => {
     if (!bytes) {
@@ -51,9 +53,10 @@ export function usePdfDocument(bytes: ArrayBuffer | null, version: number): UseP
         }
 
         if (cancelled) return
-        if (docRef.current) {
-          docRef.current.destroy()
+        if (loadingTaskRef.current) {
+          loadingTaskRef.current.destroy()
         }
+        loadingTaskRef.current = loadingTask
         docRef.current = pdfDoc
         setDoc(pdfDoc)
         setPages(pageStates)
@@ -77,7 +80,7 @@ export function usePdfDocument(bytes: ArrayBuffer | null, version: number): UseP
 
   useEffect(() => {
     return () => {
-      docRef.current?.destroy()
+      loadingTaskRef.current?.destroy()
     }
   }, [])
 

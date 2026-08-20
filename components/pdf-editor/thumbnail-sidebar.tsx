@@ -73,45 +73,51 @@ export function ThumbnailSidebar({ doc, pages, onJumpToPage, onRotate, onToggleD
                 </span>
                 <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                   <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-6"
-                        onClick={() => onRotate(page.originalIndex, -90)}
-                        aria-label="Rotar a la izquierda"
-                      >
-                        <RotateCcw className="size-3.5" />
-                      </Button>
-                    </TooltipTrigger>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-6"
+                          onClick={() => onRotate(page.originalIndex, -90)}
+                          aria-label="Rotar a la izquierda"
+                        >
+                          <RotateCcw className="size-3.5" />
+                        </Button>
+                      }
+                    />
                     <TooltipContent>Rotar izquierda</TooltipContent>
                   </Tooltip>
                   <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-6"
-                        onClick={() => onRotate(page.originalIndex, 90)}
-                        aria-label="Rotar a la derecha"
-                      >
-                        <RotateCw className="size-3.5" />
-                      </Button>
-                    </TooltipTrigger>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-6"
+                          onClick={() => onRotate(page.originalIndex, 90)}
+                          aria-label="Rotar a la derecha"
+                        >
+                          <RotateCw className="size-3.5" />
+                        </Button>
+                      }
+                    />
                     <TooltipContent>Rotar derecha</TooltipContent>
                   </Tooltip>
                   <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-6"
-                        onClick={() => onToggleDelete(page.originalIndex)}
-                        aria-label={page.deleted ? "Restaurar página" : "Eliminar página"}
-                      >
-                        {page.deleted ? <Undo2 className="size-3.5" /> : <Trash2 className="size-3.5" />}
-                      </Button>
-                    </TooltipTrigger>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-6"
+                          onClick={() => onToggleDelete(page.originalIndex)}
+                          aria-label={page.deleted ? "Restaurar página" : "Eliminar página"}
+                        >
+                          {page.deleted ? <Undo2 className="size-3.5" /> : <Trash2 className="size-3.5" />}
+                        </Button>
+                      }
+                    />
                     <TooltipContent>{page.deleted ? "Restaurar" : "Eliminar"}</TooltipContent>
                   </Tooltip>
                 </div>

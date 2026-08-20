@@ -29,7 +29,7 @@ export function PageThumbnail({ doc, pageState }: PageThumbnailProps) {
       canvas.height = viewport.height
       const ctx = canvas.getContext("2d")
       if (!ctx) return
-      await page.render({ canvasContext: ctx, viewport }).promise
+      await page.render({ canvasContext: ctx, canvas, viewport }).promise
     }
     render().catch((e) => console.error("[v0] thumbnail render failed", e))
     return () => {

@@ -96,7 +96,7 @@ export function PageCanvas({
       if (!ctx) return
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-      const renderTask = page.render({ canvasContext: ctx, viewport })
+      const renderTask = page.render({ canvasContext: ctx, canvas, viewport })
       await renderTask.promise
       if (cancelled) return
 
