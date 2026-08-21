@@ -14,8 +14,8 @@ import { readFormFields, toFormFieldValues, type FormFieldDescriptor } from "@/l
 import { filesToPdfBytes, appendFilesToPdf, ACCEPTED_IMPORT_TYPES, isSupportedImportFile } from "@/lib/pdf-import"
 import { buildSearchablePdf, documentNeedsOcr, type OcrPageResult } from "@/lib/pdf-ocr"
 import { insertBlankPage, duplicatePage, extractPagesPdf, createBlankPdf, type NewPdfOptions } from "@/lib/pdf-pages"
-import { saveSession, loadSession, clearSession } from "@/lib/pdf-session"
-import { UploadDropzone } from "./upload-dropzone"
+import { saveSession, loadSession } from "@/lib/pdf-session"
+import { HomeScreen } from "./home-screen"
 import { EditorToolbar } from "./editor-toolbar"
 import { ThumbnailSidebar } from "./thumbnail-sidebar"
 import { PageScroller } from "./page-scroller"
@@ -83,7 +83,6 @@ export function PdfEditor() {
   // When set, the next document load restores this exact page/annotation state
   // instead of a fresh reset. Used by session restore and page operations.
   const pendingInitRef = useRef<{ pages: PageState[]; annotations: Record<number, Annotation[]> } | null>(null)
-  const restoreCheckedRef = useRef(false)
   const canAutosaveRef = useRef(false)
   const selectedIdRef = useRef<string | null>(null)
   const deleteSelectedRef = useRef<(() => void) | null>(null)
@@ -119,22 +118,6 @@ export function PdfEditor() {
     setTool("select")
     toast.success("Sesión restaurada")
   }, [])
-
-  // On first mount, offer to restore a previously saved session.
-  useEffect(() => {
-    if (restoreCheckedRef.current) return
-    restoreCheckedRef.current = true
-    loadSession().then((session) => {
-      if (!session) return
-      const when = new Date(session.savedAt).toLocaleString("es")
-      toast("Trabajo sin guardar encontrado", {
-        description: `${session.fileName ?? "Documento"} · ${when}`,
-        duration: 12000,
-        action: { label: "Restaurar", onClick: () => void restoreSession() },
-        cancel: { label: "Descartar", onClick: () => void clearSession() },
-      })
-    })
-  }, [restoreSession])
 
   // Debounced autosave of the working session to IndexedDB.
   useEffect(() => {
@@ -574,14 +557,15 @@ export function PdfEditor() {
 
   if (!fileBytes) {
     return (
-      <div className="flex h-dvh flex-col">
-        <UploadDropzone
+      <>
+        <HomeScreen
           onFilesSelected={handleFilesSelected}
           onCreateNew={() => setNewPdfDialogOpen(true)}
+          onContinue={restoreSession}
           error={loadError}
         />
         <NewPdfDialog open={newPdfDialogOpen} onOpenChange={setNewPdfDialogOpen} onCreate={handleCreateNew} />
-      </div>
+      </>
     )
   }
 
