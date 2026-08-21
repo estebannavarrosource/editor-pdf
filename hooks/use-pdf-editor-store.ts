@@ -17,12 +17,15 @@ export function usePdfEditorStore() {
   const future = useRef<DocState[]>([])
   const [historyTick, setHistoryTick] = useState(0)
 
-  const initDocument = useCallback((newPages: PageState[]) => {
-    past.current = []
-    future.current = []
-    setState({ pages: newPages, annotations: {} })
-    setHistoryTick((t) => t + 1)
-  }, [])
+  const initDocument = useCallback(
+    (newPages: PageState[], newAnnotations: Record<number, Annotation[]> = {}) => {
+      past.current = []
+      future.current = []
+      setState({ pages: newPages, annotations: newAnnotations })
+      setHistoryTick((t) => t + 1)
+    },
+    [],
+  )
 
   const mutate = useCallback((updater: (draft: DocState) => DocState) => {
     setState((prev) => {

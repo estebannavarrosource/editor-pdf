@@ -7,12 +7,14 @@ import { usePdfDocument } from "@/hooks/use-pdf-document"
 import { usePdfEditorStore } from "@/hooks/use-pdf-editor-store"
 import { usePdfSearch, type DocumentMatch } from "@/hooks/use-pdf-search"
 import type { SearchOptions } from "@/lib/pdf-search"
-import type { Annotation, ToolId } from "@/lib/pdf-types"
+import type { Annotation, PageState, ToolId } from "@/lib/pdf-types"
 import { buildExportedPdf } from "@/lib/pdf-engine"
 import { exportAsDocx, exportPagesAsImages } from "@/lib/pdf-export"
 import { readFormFields, toFormFieldValues, type FormFieldDescriptor } from "@/lib/pdf-form"
 import { filesToPdfBytes, appendFilesToPdf, ACCEPTED_IMPORT_TYPES, isSupportedImportFile } from "@/lib/pdf-import"
 import { buildSearchablePdf, documentNeedsOcr, type OcrPageResult } from "@/lib/pdf-ocr"
+import { insertBlankPage, duplicatePage, extractPagesPdf } from "@/lib/pdf-pages"
+import { saveSession, loadSession, clearSession } from "@/lib/pdf-session"
 import { UploadDropzone } from "./upload-dropzone"
 import { EditorToolbar } from "./editor-toolbar"
 import { ThumbnailSidebar } from "./thumbnail-sidebar"
@@ -75,11 +77,22 @@ export function PdfEditor() {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const pageContainerRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const ocrSuggestedRef = useRef(false)
+  // When set, the next document load restores this exact page/annotation state
+  // instead of a fresh reset. Used by session restore and page operations.
+  const pendingInitRef = useRef<{ pages: PageState[]; annotations: Record<number, Annotation[]> } | null>(null)
+  const restoreCheckedRef = useRef(false)
+  const canAutosaveRef = useRef(false)
 
   useEffect(() => {
-    if (docPages.length > 0) {
+    if (docPages.length === 0) return
+    const pending = pendingInitRef.current
+    pendingInitRef.current = null
+    if (pending) {
+      store.initDocument(pending.pages, pending.annotations)
+    } else {
       store.initDocument(docPages)
     }
+    canAutosaveRef.current = true
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docPages])
 
@@ -87,6 +100,50 @@ export function PdfEditor() {
     if (!fileBytes) return
     readFormFields(fileBytes.slice(0)).then(setFormFields)
   }, [fileBytes, version])
+
+  const restoreSession = useCallback(async () => {
+    const session = await loadSession()
+    if (!session) return
+    pendingInitRef.current = { pages: session.pages, annotations: session.annotations }
+    ocrSuggestedRef.current = true
+    setFileName(session.fileName)
+    setFileBytes(session.bytes)
+    setVersion((v) => v + 1)
+    setSelectedId(null)
+    setCurrentPageIndex(0)
+    setTool("select")
+    toast.success("Sesión restaurada")
+  }, [])
+
+  // On first mount, offer to restore a previously saved session.
+  useEffect(() => {
+    if (restoreCheckedRef.current) return
+    restoreCheckedRef.current = true
+    loadSession().then((session) => {
+      if (!session) return
+      const when = new Date(session.savedAt).toLocaleString("es")
+      toast("Trabajo sin guardar encontrado", {
+        description: `${session.fileName ?? "Documento"} · ${when}`,
+        duration: 12000,
+        action: { label: "Restaurar", onClick: () => void restoreSession() },
+        cancel: { label: "Descartar", onClick: () => void clearSession() },
+      })
+    })
+  }, [restoreSession])
+
+  // Debounced autosave of the working session to IndexedDB.
+  useEffect(() => {
+    if (!fileBytes || !canAutosaveRef.current || store.pages.length === 0) return
+    const handle = setTimeout(() => {
+      void saveSession({
+        fileName,
+        bytes: fileBytes,
+        pages: store.pages,
+        annotations: store.annotations,
+      })
+    }, 800)
+    return () => clearTimeout(handle)
+  }, [fileBytes, fileName, store.pages, store.annotations])
 
   useEffect(() => {
     if (error) setLoadError(error)
@@ -232,6 +289,68 @@ export function PdfEditor() {
       toast.success("PDF con texto buscable creado")
     },
     [fileBytes],
+  )
+
+  const handleInsertBlank = useCallback(
+    async (afterIndex: number | null) => {
+      if (!fileBytes) return
+      try {
+        const result = await insertBlankPage(fileBytes.slice(0), store.pages, afterIndex)
+        pendingInitRef.current = { pages: result.pages, annotations: store.annotations }
+        setFileBytes(toArrayBuffer(result.bytes))
+        setVersion((v) => v + 1)
+        toast.success("Página en blanco insertada")
+      } catch (e) {
+        console.error("[v0] insert blank failed", e)
+        toast.error("No se pudo insertar la página")
+      }
+    },
+    [fileBytes, store.pages, store.annotations],
+  )
+
+  const handleDuplicatePage = useCallback(
+    async (index: number) => {
+      if (!fileBytes) return
+      try {
+        const result = await duplicatePage(fileBytes.slice(0), store.pages, store.annotations, index)
+        pendingInitRef.current = { pages: result.pages, annotations: result.annotations }
+        setFileBytes(toArrayBuffer(result.bytes))
+        setVersion((v) => v + 1)
+        toast.success("Página duplicada")
+      } catch (e) {
+        console.error("[v0] duplicate page failed", e)
+        toast.error("No se pudo duplicar la página")
+      }
+    },
+    [fileBytes, store.pages, store.annotations],
+  )
+
+  const handleExtractPage = useCallback(
+    async (index: number) => {
+      if (!fileBytes) return
+      try {
+        // Display index = count of visible pages before this one in the array.
+        let displayIndex = 0
+        for (let i = 0; i < index; i++) if (!store.pages[i].deleted) displayIndex++
+
+        const map = new Map<number, Annotation[]>()
+        for (const [key, value] of Object.entries(store.annotations)) map.set(Number(key), value)
+
+        const baked = await buildExportedPdf({
+          originalBytes: fileBytes.slice(0),
+          pages: store.pages,
+          annotationsByPage: map,
+        })
+        const bytes = await extractPagesPdf(toArrayBuffer(baked), [displayIndex])
+        const baseName = fileName?.replace(/\.pdf$/i, "") || "documento"
+        saveAs(new Blob([bytes], { type: "application/pdf" }), `${baseName}-pagina-${displayIndex + 1}.pdf`)
+        toast.success("Página extraída")
+      } catch (e) {
+        console.error("[v0] extract page failed", e)
+        toast.error("No se pudo extraer la página")
+      }
+    },
+    [fileBytes, store.pages, store.annotations, fileName],
   )
 
   const computeCurrentPage = useCallback(() => {
@@ -488,6 +607,9 @@ export function PdfEditor() {
             onRotate={store.rotatePage}
             onToggleDelete={store.toggleDeletePage}
             onReorder={store.reorderPages}
+            onInsertBlank={handleInsertBlank}
+            onDuplicate={handleDuplicatePage}
+            onExtract={handleExtractPage}
           />
         )}
 

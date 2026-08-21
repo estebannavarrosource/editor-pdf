@@ -1,12 +1,24 @@
 "use client"
 
 import { useState } from "react"
-import { RotateCcw, RotateCw, Trash2, Undo2, GripVertical } from "lucide-react"
+import {
+  RotateCcw,
+  RotateCw,
+  Trash2,
+  Undo2,
+  GripVertical,
+  Copy,
+  FilePlus,
+  Download,
+  Plus,
+  MoreVertical,
+} from "lucide-react"
 import type { PdfjsDocument } from "@/lib/pdfjs"
 import type { PageState } from "@/lib/pdf-types"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 import { PageThumbnail } from "./page-thumbnail"
 
@@ -17,9 +29,22 @@ interface ThumbnailSidebarProps {
   onRotate: (originalIndex: number, delta: 90 | -90) => void
   onToggleDelete: (originalIndex: number) => void
   onReorder: (fromIndex: number, toIndex: number) => void
+  onInsertBlank: (afterIndex: number | null) => void
+  onDuplicate: (index: number) => void
+  onExtract: (index: number) => void
 }
 
-export function ThumbnailSidebar({ doc, pages, onJumpToPage, onRotate, onToggleDelete, onReorder }: ThumbnailSidebarProps) {
+export function ThumbnailSidebar({
+  doc,
+  pages,
+  onJumpToPage,
+  onRotate,
+  onToggleDelete,
+  onReorder,
+  onInsertBlank,
+  onDuplicate,
+  onExtract,
+}: ThumbnailSidebarProps) {
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [overIndex, setOverIndex] = useState<number | null>(null)
 
@@ -120,12 +145,55 @@ export function ThumbnailSidebar({ doc, pages, onJumpToPage, onRotate, onToggleD
                     />
                     <TooltipContent>{page.deleted ? "Restaurar" : "Eliminar"}</TooltipContent>
                   </Tooltip>
+                  <Popover>
+                    <PopoverTrigger
+                      render={
+                        <Button variant="ghost" size="icon" className="size-6" aria-label="Más acciones de página">
+                          <MoreVertical className="size-3.5" />
+                        </Button>
+                      }
+                    />
+                    <PopoverContent align="end" className="w-48 p-1">
+                      <button
+                        type="button"
+                        onClick={() => onDuplicate(index)}
+                        className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-foreground hover:bg-accent"
+                      >
+                        <Copy className="size-4" /> Duplicar página
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onInsertBlank(index)}
+                        className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-foreground hover:bg-accent"
+                      >
+                        <FilePlus className="size-4" /> Insertar en blanco
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onExtract(index)}
+                        className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-foreground hover:bg-accent"
+                      >
+                        <Download className="size-4" /> Extraer a PDF
+                      </button>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
             </li>
           ))}
         </ol>
       </ScrollArea>
+      <div className="border-t border-border p-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => onInsertBlank(null)}
+        >
+          <Plus data-icon="inline-start" />
+          Página en blanco
+        </Button>
+      </div>
     </aside>
   )
 }
