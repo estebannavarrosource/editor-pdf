@@ -9,6 +9,8 @@ import type { Annotation, ToolId } from "@/lib/pdf-types"
 import { buildExportedPdf } from "@/lib/pdf-engine"
 import { exportAsDocx, exportPagesAsImages } from "@/lib/pdf-export"
 import { readFormFields, toFormFieldValues, type FormFieldDescriptor } from "@/lib/pdf-form"
+import { filesToPdfBytes, appendFilesToPdf, ACCEPTED_IMPORT_TYPES, isSupportedImportFile } from "@/lib/pdf-import"
+import { buildSearchablePdf, documentNeedsOcr, type OcrPageResult } from "@/lib/pdf-ocr"
 import { UploadDropzone } from "./upload-dropzone"
 import { EditorToolbar } from "./editor-toolbar"
 import { ThumbnailSidebar } from "./thumbnail-sidebar"
@@ -16,7 +18,12 @@ import { PageScroller } from "./page-scroller"
 import { SignatureDialog } from "./signature-dialog"
 import { FormFillSheet } from "./form-fill-sheet"
 import { ExportDialog, type ExportFormat } from "./export-dialog"
+import { OcrDialog } from "./ocr-dialog"
 import { Spinner } from "@/components/ui/spinner"
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+}
 
 const MIN_SCALE = 0.5
 const MAX_SCALE = 3
@@ -45,10 +52,14 @@ export function PdfEditor() {
   const [formSheetOpen, setFormSheetOpen] = useState(false)
   const [formFields, setFormFields] = useState<FormFieldDescriptor[]>([])
   const [exporting, setExporting] = useState(false)
+  const [ocrDialogOpen, setOcrDialogOpen] = useState(false)
+  const [currentPageIndex, setCurrentPageIndex] = useState(0)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const appendInputRef = useRef<HTMLInputElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const pageContainerRefs = useRef<Map<number, HTMLDivElement>>(new Map())
+  const ocrSuggestedRef = useRef(false)
 
   useEffect(() => {
     if (docPages.length > 0) {
@@ -66,19 +77,112 @@ export function PdfEditor() {
     if (error) setLoadError(error)
   }, [error])
 
-  const handleFileSelected = useCallback(async (file: File) => {
+  useEffect(() => {
+    if (!doc || ocrSuggestedRef.current) return
+    let cancelled = false
+    documentNeedsOcr(doc).then((needs) => {
+      if (cancelled || !needs) return
+      ocrSuggestedRef.current = true
+      toast.info("Este documento parece escaneado. Usa OCR para reconocer su texto.", {
+        action: { label: "Aplicar OCR", onClick: () => setOcrDialogOpen(true) },
+        duration: 8000,
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [doc])
+
+  const handleFilesSelected = useCallback(async (files: File[]) => {
     setLoadError(null)
-    setFileName(file.name)
-    const buf = await file.arrayBuffer()
-    setFileBytes(buf)
-    setVersion((v) => v + 1)
-    setSelectedId(null)
-    setTool("select")
+    const valid = files.filter(isSupportedImportFile)
+    if (valid.length === 0) return
+    try {
+      let buf: ArrayBuffer
+      let name: string
+      if (valid.length === 1 && valid[0].type === "application/pdf") {
+        // Keep the original bytes so AcroForm fields are preserved.
+        buf = await valid[0].arrayBuffer()
+        name = valid[0].name
+      } else {
+        const bytes = await filesToPdfBytes(valid)
+        buf = toArrayBuffer(bytes)
+        if (valid.length === 1) {
+          name = valid[0].name.replace(/\.[^.]+$/, "") + ".pdf"
+        } else {
+          name = "documento-importado.pdf"
+        }
+      }
+      ocrSuggestedRef.current = false
+      setFileName(name)
+      setFileBytes(buf)
+      setVersion((v) => v + 1)
+      setSelectedId(null)
+      setCurrentPageIndex(0)
+      setTool("select")
+    } catch (e) {
+      console.error("[v0] import failed", e)
+      setLoadError("No se pudieron importar los archivos seleccionados.")
+    }
   }, [])
 
-  const registerScrollContainer = useCallback((el: HTMLDivElement | null) => {
-    scrollContainerRef.current = el
+  const handleAppendFiles = useCallback(
+    async (files: File[]) => {
+      if (!fileBytes) return
+      const valid = files.filter(isSupportedImportFile)
+      if (valid.length === 0) return
+      try {
+        const bytes = await appendFilesToPdf(fileBytes.slice(0), valid)
+        setFileBytes(toArrayBuffer(bytes))
+        setVersion((v) => v + 1)
+        toast.success(valid.length === 1 ? "Archivo anexado" : `${valid.length} archivos anexados`)
+      } catch (e) {
+        console.error("[v0] append failed", e)
+        toast.error("No se pudieron anexar los archivos")
+      }
+    },
+    [fileBytes],
+  )
+
+  const handleApplySearchable = useCallback(
+    async (results: OcrPageResult[]) => {
+      if (!fileBytes) return
+      const bytes = await buildSearchablePdf(fileBytes.slice(0), results)
+      setFileBytes(toArrayBuffer(bytes))
+      setVersion((v) => v + 1)
+      toast.success("PDF con texto buscable creado")
+    },
+    [fileBytes],
+  )
+
+  const computeCurrentPage = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    const containerTop = container.getBoundingClientRect().top
+    let best: number | null = null
+    let bestDist = Number.POSITIVE_INFINITY
+    for (const [idx, el] of pageContainerRefs.current) {
+      const rect = el.getBoundingClientRect()
+      if (rect.bottom <= containerTop) continue
+      const dist = Math.abs(rect.top - containerTop)
+      if (dist < bestDist) {
+        bestDist = dist
+        best = idx
+      }
+    }
+    if (best !== null) setCurrentPageIndex(best)
   }, [])
+
+  const registerScrollContainer = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.removeEventListener("scroll", computeCurrentPage)
+      }
+      scrollContainerRef.current = el
+      if (el) el.addEventListener("scroll", computeCurrentPage, { passive: true })
+    },
+    [computeCurrentPage],
+  )
 
   const registerPageContainer = useCallback((originalIndex: number, el: HTMLDivElement | null) => {
     if (el) pageContainerRefs.current.set(originalIndex, el)
@@ -215,7 +319,7 @@ export function PdfEditor() {
   if (!fileBytes) {
     return (
       <div className="flex h-dvh flex-col">
-        <UploadDropzone onFileSelected={handleFileSelected} error={loadError} />
+        <UploadDropzone onFilesSelected={handleFilesSelected} error={loadError} />
       </div>
     )
   }
@@ -240,6 +344,8 @@ export function PdfEditor() {
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
         onOpenFile={() => fileInputRef.current?.click()}
+        onImportAppend={() => appendInputRef.current?.click()}
+        onOpenOcr={() => setOcrDialogOpen(true)}
         onOpenExport={() => setExportDialogOpen(true)}
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
         onOpenSignature={() => setSignatureDialogOpen(true)}
@@ -250,11 +356,25 @@ export function PdfEditor() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="application/pdf"
+        accept={ACCEPTED_IMPORT_TYPES}
+        multiple
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) handleFileSelected(file)
+          const files = e.target.files ? Array.from(e.target.files) : []
+          if (files.length > 0) handleFilesSelected(files)
+          e.target.value = ""
+        }}
+      />
+
+      <input
+        ref={appendInputRef}
+        type="file"
+        accept={ACCEPTED_IMPORT_TYPES}
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const files = e.target.files ? Array.from(e.target.files) : []
+          if (files.length > 0) handleAppendFiles(files)
           e.target.value = ""
         }}
       />
@@ -319,6 +439,15 @@ export function PdfEditor() {
       />
 
       <ExportDialog open={exportDialogOpen} onOpenChange={setExportDialogOpen} onExport={handleExport} />
+
+      <OcrDialog
+        open={ocrDialogOpen}
+        onOpenChange={setOcrDialogOpen}
+        doc={doc}
+        pages={store.pages}
+        currentPageIndex={currentPageIndex}
+        onApplySearchable={handleApplySearchable}
+      />
     </div>
   )
 }

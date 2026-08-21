@@ -1,28 +1,28 @@
 "use client"
 
 import { useCallback, useRef, useState } from "react"
-import { FileText, Upload } from "lucide-react"
+import { FileText, Upload, ImageIcon } from "lucide-react"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from "@/components/ui/empty"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { ACCEPTED_IMPORT_TYPES, isSupportedImportFile } from "@/lib/pdf-import"
 
 interface UploadDropzoneProps {
-  onFileSelected: (file: File) => void
+  onFilesSelected: (files: File[]) => void
   error?: string | null
 }
 
-export function UploadDropzone({ onFileSelected, error }: UploadDropzoneProps) {
+export function UploadDropzone({ onFilesSelected, error }: UploadDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
 
   const handleFiles = useCallback(
     (files: FileList | null) => {
-      const file = files?.[0]
-      if (file && file.type === "application/pdf") {
-        onFileSelected(file)
-      }
+      if (!files) return
+      const valid = Array.from(files).filter(isSupportedImportFile)
+      if (valid.length > 0) onFilesSelected(valid)
     },
-    [onFileSelected],
+    [onFilesSelected],
   )
 
   return (
@@ -48,25 +48,34 @@ export function UploadDropzone({ onFileSelected, error }: UploadDropzoneProps) {
             <EmptyMedia variant="icon">
               <FileText />
             </EmptyMedia>
-            <EmptyTitle>Arrastra un PDF aquí</EmptyTitle>
+            <EmptyTitle>Arrastra tus archivos aquí</EmptyTitle>
             <EmptyDescription>
-              O selecciona un archivo desde tu dispositivo para empezar a ver, anotar y manipularlo.
+              Importa uno o varios PDFs e imágenes (PNG, JPG, WEBP) para empezar a ver, anotar y manipular tu
+              documento. Las imágenes se convierten en páginas PDF.
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
             <Button onClick={() => inputRef.current?.click()}>
               <Upload data-icon="inline-start" />
-              Seleccionar archivo PDF
+              Seleccionar archivos
             </Button>
+            <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+              <ImageIcon className="size-3.5" />
+              PDF · PNG · JPG · WEBP
+            </p>
             {error && <p className="text-sm text-destructive">{error}</p>}
           </EmptyContent>
         </Empty>
         <input
           ref={inputRef}
           type="file"
-          accept="application/pdf"
+          accept={ACCEPTED_IMPORT_TYPES}
+          multiple
           className="hidden"
-          onChange={(e) => handleFiles(e.target.files)}
+          onChange={(e) => {
+            handleFiles(e.target.files)
+            e.target.value = ""
+          }}
         />
       </div>
     </div>

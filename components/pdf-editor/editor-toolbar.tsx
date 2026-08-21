@@ -20,6 +20,8 @@ import {
   ZoomOut,
   FileDown,
   Upload,
+  FilePlus2,
+  ScanText,
   PanelLeft,
 } from "lucide-react"
 import type { ToolId } from "@/lib/pdf-types"
@@ -74,6 +76,8 @@ interface EditorToolbarProps {
   onZoomIn: () => void
   onZoomOut: () => void
   onOpenFile: () => void
+  onImportAppend: () => void
+  onOpenOcr: () => void
   onOpenExport: () => void
   onToggleSidebar: () => void
   onOpenSignature: () => void
@@ -99,6 +103,8 @@ export function EditorToolbar({
   onZoomIn,
   onZoomOut,
   onOpenFile,
+  onImportAppend,
+  onOpenOcr,
   onOpenExport,
   onToggleSidebar,
   onOpenSignature,
@@ -278,12 +284,34 @@ export function EditorToolbar({
         <Tooltip>
           <TooltipTrigger
             render={
+              <Button variant="ghost" size="icon" onClick={onOpenOcr} aria-label="Reconocer texto (OCR)">
+                <ScanText />
+              </Button>
+            }
+          />
+          <TooltipContent>Reconocer texto (OCR)</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button variant="ghost" size="icon" onClick={onImportAppend} aria-label="Importar y anexar archivos">
+                <FilePlus2 />
+              </Button>
+            }
+          />
+          <TooltipContent>Importar y anexar (PDF / imágenes)</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger
+            render={
               <Button variant="ghost" size="icon" onClick={onOpenFile} aria-label="Abrir archivo">
                 <Upload />
               </Button>
             }
           />
-          <TooltipContent>Abrir PDF</TooltipContent>
+          <TooltipContent>Abrir archivo (reemplazar)</TooltipContent>
         </Tooltip>
 
         <Button onClick={onOpenExport} size="sm">
