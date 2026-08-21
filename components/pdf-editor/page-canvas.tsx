@@ -500,6 +500,36 @@ export function PageCanvas({
         <SearchHighlightLayer matches={searchMatches} viewport={viewportRef.current} />
       )}
 
+      {/* Interaction capture layer (below annotations so existing annotations
+          and the inline text editor stay clickable in select/text modes) */}
+      <div
+        ref={overlayRef}
+        className="absolute inset-0"
+        style={{
+          pointerEvents: overlayInteractive ? "auto" : "none",
+          cursor:
+            tool === "select"
+              ? "default"
+              : tool === "eraser"
+                ? "crosshair"
+                : tool === "pan"
+                  ? "grab"
+                  : "crosshair",
+        }}
+        onMouseDown={(e) => {
+          // Prevent the overlay from stealing focus so the inline text editor
+          // (focused programmatically on creation) doesn't blur and vanish.
+          if (tool !== "select" && tool !== "pan") e.preventDefault()
+        }}
+        onPointerDown={handleOverlayPointerDown}
+        onPointerMove={handleOverlayPointerMove}
+        onPointerUp={handleOverlayPointerUp}
+        onPointerLeave={handleOverlayPointerUp}
+        onClick={() => {
+          if (tool === "select") onSelectAnnotation(null)
+        }}
+      />
+
       {/* Existing annotations */}
       <div className="absolute inset-0" style={{ pointerEvents: "none" }}>
         {viewportRef.current &&
@@ -572,30 +602,6 @@ export function PageCanvas({
           }}
         />
       )}
-
-      {/* Interaction capture layer */}
-      <div
-        ref={overlayRef}
-        className="absolute inset-0"
-        style={{
-          pointerEvents: overlayInteractive ? "auto" : "none",
-          cursor:
-            tool === "select"
-              ? "default"
-              : tool === "eraser"
-                ? "crosshair"
-                : tool === "pan"
-                  ? "grab"
-                  : "crosshair",
-        }}
-        onPointerDown={handleOverlayPointerDown}
-        onPointerMove={handleOverlayPointerMove}
-        onPointerUp={handleOverlayPointerUp}
-        onPointerLeave={handleOverlayPointerUp}
-        onClick={() => {
-          if (tool === "select") onSelectAnnotation(null)
-        }}
-      />
 
       <div className="pointer-events-none absolute -top-6 left-0 text-xs font-medium text-muted-foreground">
         Página {displayNumber}
