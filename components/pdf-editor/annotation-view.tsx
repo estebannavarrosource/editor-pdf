@@ -34,13 +34,17 @@ export function AnnotationView({
           {annotation.rects.map((r, i) => {
             const vr = pdfRectToViewportRect(viewport, r)
             if (annotation.type === "highlight") {
+              // Selection client rects include line-height padding, so hug the
+              // glyphs by insetting ~18% top/bottom for a tighter marker look.
+              const inset = vr.height * 0.18
               return (
                 <rect
                   key={i}
                   x={vr.left}
-                  y={vr.top}
+                  y={vr.top + inset}
                   width={vr.width}
-                  height={vr.height}
+                  height={Math.max(1, vr.height - inset * 2)}
+                  rx={1}
                   fill={annotation.color}
                   opacity={annotation.opacity}
                 />

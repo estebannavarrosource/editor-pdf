@@ -103,11 +103,13 @@ function drawAnnotation(
   switch (ann.type) {
     case "highlight": {
       for (const r of ann.rects) {
+        // Match the on-screen marker: inset ~18% top/bottom to hug the glyphs.
+        const inset = r.height * 0.18
         page.drawRectangle({
           x: r.x,
-          y: r.y,
+          y: r.y + inset,
           width: r.width,
-          height: r.height,
+          height: Math.max(1, r.height - inset * 2),
           color,
           opacity: ann.opacity,
         })
