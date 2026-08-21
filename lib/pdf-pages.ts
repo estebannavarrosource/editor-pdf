@@ -4,6 +4,38 @@ import type { Annotation, PageState } from "./pdf-types"
 
 const LETTER: [number, number] = [612, 792]
 
+/** Standard page sizes in PDF points (1pt = 1/72in), portrait orientation. */
+export const PAGE_SIZES = {
+  a4: { label: "A4", dims: [595.28, 841.89] as [number, number] },
+  letter: { label: "Carta", dims: [612, 792] as [number, number] },
+  legal: { label: "Oficio", dims: [612, 1008] as [number, number] },
+  a3: { label: "A3", dims: [841.89, 1190.55] as [number, number] },
+} as const
+
+export type PageSizeId = keyof typeof PAGE_SIZES
+export type PageOrientation = "portrait" | "landscape"
+
+export interface NewPdfOptions {
+  size: PageSizeId
+  orientation: PageOrientation
+  pageCount: number
+}
+
+/**
+ * Creates a brand-new PDF from scratch with the requested number of blank
+ * pages, sizing and orienting each one per the chosen preset.
+ */
+export async function createBlankPdf(options: NewPdfOptions): Promise<Uint8Array> {
+  const { size, orientation, pageCount } = options
+  const [w, h] = PAGE_SIZES[size].dims
+  const dims: [number, number] = orientation === "landscape" ? [h, w] : [w, h]
+
+  const doc = await PDFDocument.create()
+  const count = Math.max(1, Math.min(50, Math.floor(pageCount) || 1))
+  for (let i = 0; i < count; i++) doc.addPage(dims)
+  return doc.save()
+}
+
 /**
  * Appends a blank page to the underlying bytes and inserts a matching PageState
  * right after the given full-array index (or at the end when null). Existing

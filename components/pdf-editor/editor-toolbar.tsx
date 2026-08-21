@@ -21,6 +21,7 @@ import {
   FileDown,
   Upload,
   FilePlus2,
+  FilePlus,
   ScanText,
   Search,
   PanelLeft,
@@ -77,6 +78,7 @@ interface EditorToolbarProps {
   onZoomIn: () => void
   onZoomOut: () => void
   onOpenSearch: () => void
+  onCreateNew: () => void
   onOpenFile: () => void
   onImportAppend: () => void
   onOpenOcr: () => void
@@ -105,6 +107,7 @@ export function EditorToolbar({
   onZoomIn,
   onZoomOut,
   onOpenSearch,
+  onCreateNew,
   onOpenFile,
   onImportAppend,
   onOpenOcr,
@@ -304,6 +307,17 @@ export function EditorToolbar({
             }
           />
           <TooltipContent>Reconocer texto (OCR)</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button variant="ghost" size="icon" onClick={onCreateNew} aria-label="Crear documento en blanco">
+                <FilePlus />
+              </Button>
+            }
+          />
+          <TooltipContent>Nuevo documento en blanco</TooltipContent>
         </Tooltip>
 
         <Tooltip>

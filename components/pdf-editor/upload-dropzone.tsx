@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useRef, useState } from "react"
-import { FileText, Upload, ImageIcon } from "lucide-react"
+import { FileText, Upload, ImageIcon, FilePlus2 } from "lucide-react"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from "@/components/ui/empty"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -9,10 +9,11 @@ import { ACCEPTED_IMPORT_TYPES, isSupportedImportFile } from "@/lib/pdf-import"
 
 interface UploadDropzoneProps {
   onFilesSelected: (files: File[]) => void
+  onCreateNew?: () => void
   error?: string | null
 }
 
-export function UploadDropzone({ onFilesSelected, error }: UploadDropzoneProps) {
+export function UploadDropzone({ onFilesSelected, onCreateNew, error }: UploadDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
 
@@ -55,10 +56,18 @@ export function UploadDropzone({ onFilesSelected, error }: UploadDropzoneProps) 
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <Button onClick={() => inputRef.current?.click()}>
-              <Upload data-icon="inline-start" />
-              Seleccionar archivos
-            </Button>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button onClick={() => inputRef.current?.click()}>
+                <Upload data-icon="inline-start" />
+                Seleccionar archivos
+              </Button>
+              {onCreateNew && (
+                <Button variant="outline" onClick={onCreateNew}>
+                  <FilePlus2 data-icon="inline-start" />
+                  Crear PDF en blanco
+                </Button>
+              )}
+            </div>
             <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
               <ImageIcon className="size-3.5" />
               PDF · PNG · JPG · WEBP

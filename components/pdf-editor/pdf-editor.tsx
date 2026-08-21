@@ -13,7 +13,7 @@ import { exportAsDocx, exportPagesAsImages } from "@/lib/pdf-export"
 import { readFormFields, toFormFieldValues, type FormFieldDescriptor } from "@/lib/pdf-form"
 import { filesToPdfBytes, appendFilesToPdf, ACCEPTED_IMPORT_TYPES, isSupportedImportFile } from "@/lib/pdf-import"
 import { buildSearchablePdf, documentNeedsOcr, type OcrPageResult } from "@/lib/pdf-ocr"
-import { insertBlankPage, duplicatePage, extractPagesPdf } from "@/lib/pdf-pages"
+import { insertBlankPage, duplicatePage, extractPagesPdf, createBlankPdf, type NewPdfOptions } from "@/lib/pdf-pages"
 import { saveSession, loadSession, clearSession } from "@/lib/pdf-session"
 import { UploadDropzone } from "./upload-dropzone"
 import { EditorToolbar } from "./editor-toolbar"
@@ -23,6 +23,7 @@ import { SignatureDialog } from "./signature-dialog"
 import { FormFillSheet } from "./form-fill-sheet"
 import { ExportDialog, type ExportFormat } from "./export-dialog"
 import { OcrDialog } from "./ocr-dialog"
+import { NewPdfDialog } from "./new-pdf-dialog"
 import { SearchBar } from "./search-bar"
 import { AnnotationProperties } from "./annotation-properties"
 import type { PageSearchMatch } from "./page-canvas"
@@ -61,6 +62,7 @@ export function PdfEditor() {
   const [formFields, setFormFields] = useState<FormFieldDescriptor[]>([])
   const [exporting, setExporting] = useState(false)
   const [ocrDialogOpen, setOcrDialogOpen] = useState(false)
+  const [newPdfDialogOpen, setNewPdfDialogOpen] = useState(false)
   const [currentPageIndex, setCurrentPageIndex] = useState(0)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -283,6 +285,24 @@ export function PdfEditor() {
     } catch (e) {
       console.error("[v0] import failed", e)
       setLoadError("No se pudieron importar los archivos seleccionados.")
+    }
+  }, [])
+
+  const handleCreateNew = useCallback(async (options: NewPdfOptions) => {
+    setLoadError(null)
+    try {
+      const bytes = await createBlankPdf(options)
+      ocrSuggestedRef.current = true
+      setFileName("documento-nuevo.pdf")
+      setFileBytes(toArrayBuffer(bytes))
+      setVersion((v) => v + 1)
+      setSelectedId(null)
+      setCurrentPageIndex(0)
+      setTool("select")
+      toast.success("Documento en blanco creado")
+    } catch (e) {
+      console.error("[v0] create pdf failed", e)
+      setLoadError("No se pudo crear el documento en blanco.")
     }
   }, [])
 
@@ -555,7 +575,12 @@ export function PdfEditor() {
   if (!fileBytes) {
     return (
       <div className="flex h-dvh flex-col">
-        <UploadDropzone onFilesSelected={handleFilesSelected} error={loadError} />
+        <UploadDropzone
+          onFilesSelected={handleFilesSelected}
+          onCreateNew={() => setNewPdfDialogOpen(true)}
+          error={loadError}
+        />
+        <NewPdfDialog open={newPdfDialogOpen} onOpenChange={setNewPdfDialogOpen} onCreate={handleCreateNew} />
       </div>
     )
   }
@@ -580,6 +605,7 @@ export function PdfEditor() {
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
         onOpenSearch={openSearch}
+        onCreateNew={() => setNewPdfDialogOpen(true)}
         onOpenFile={() => fileInputRef.current?.click()}
         onImportAppend={() => appendInputRef.current?.click()}
         onOpenOcr={() => setOcrDialogOpen(true)}
@@ -709,6 +735,8 @@ export function PdfEditor() {
       />
 
       <ExportDialog open={exportDialogOpen} onOpenChange={setExportDialogOpen} onExport={handleExport} />
+
+      <NewPdfDialog open={newPdfDialogOpen} onOpenChange={setNewPdfDialogOpen} onCreate={handleCreateNew} />
 
       <OcrDialog
         open={ocrDialogOpen}
