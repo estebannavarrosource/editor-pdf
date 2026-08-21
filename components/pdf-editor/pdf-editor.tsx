@@ -24,6 +24,7 @@ import { FormFillSheet } from "./form-fill-sheet"
 import { ExportDialog, type ExportFormat } from "./export-dialog"
 import { OcrDialog } from "./ocr-dialog"
 import { SearchBar } from "./search-bar"
+import { AnnotationProperties } from "./annotation-properties"
 import type { PageSearchMatch } from "./page-canvas"
 import { Spinner } from "@/components/ui/spinner"
 
@@ -82,6 +83,8 @@ export function PdfEditor() {
   const pendingInitRef = useRef<{ pages: PageState[]; annotations: Record<number, Annotation[]> } | null>(null)
   const restoreCheckedRef = useRef(false)
   const canAutosaveRef = useRef(false)
+  const selectedIdRef = useRef<string | null>(null)
+  const deleteSelectedRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     if (docPages.length === 0) return
@@ -228,6 +231,27 @@ export function PdfEditor() {
     })
     return map
   }, [matches, activeMatch])
+
+  // Locate the selected annotation and the page it lives on for the properties panel.
+  const selectedAnnotation = useMemo(() => {
+    if (!selectedId) return null
+    for (const [key, list] of Object.entries(store.annotations)) {
+      const found = list.find((a) => a.id === selectedId)
+      if (found) return { annotation: found, pageIndex: Number(key) }
+    }
+    return null
+  }, [selectedId, store.annotations])
+
+  // Keep refs in sync so the keydown listener can delete without re-subscribing.
+  useEffect(() => {
+    selectedIdRef.current = selectedId
+    deleteSelectedRef.current = selectedAnnotation
+      ? () => {
+          store.removeAnnotation(selectedAnnotation.pageIndex, selectedAnnotation.annotation.id)
+          setSelectedId(null)
+        }
+      : null
+  }, [selectedId, selectedAnnotation, store])
 
   const handleFilesSelected = useCallback(async (files: File[]) => {
     setLoadError(null)
@@ -424,14 +448,23 @@ export function PdfEditor() {
   }, [store])
 
   useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      const isMod = e.metaKey || e.ctrlKey
-      if (isMod && e.key.toLowerCase() === "f") {
-        e.preventDefault()
-        openSearch()
-        return
-      }
-      if (!isMod) return
+      function onKeyDown(e: KeyboardEvent) {
+        const target = e.target as HTMLElement | null
+        const typing =
+          target &&
+          (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+        const isMod = e.metaKey || e.ctrlKey
+        if (isMod && e.key.toLowerCase() === "f") {
+          e.preventDefault()
+          openSearch()
+          return
+        }
+        if (!typing && (e.key === "Delete" || e.key === "Backspace") && selectedIdRef.current) {
+          e.preventDefault()
+          deleteSelectedRef.current?.()
+          return
+        }
+        if (!isMod) return
       if (e.key === "z" && !e.shiftKey) {
         e.preventDefault()
         handleUndo()
@@ -610,6 +643,20 @@ export function PdfEditor() {
             onInsertBlank={handleInsertBlank}
             onDuplicate={handleDuplicatePage}
             onExtract={handleExtractPage}
+          />
+        )}
+
+        {selectedAnnotation && tool === "select" && (
+          <AnnotationProperties
+            annotation={selectedAnnotation.annotation}
+            onUpdate={(patch) =>
+              store.updateAnnotation(selectedAnnotation.pageIndex, selectedAnnotation.annotation.id, patch)
+            }
+            onRemove={() => {
+              store.removeAnnotation(selectedAnnotation.pageIndex, selectedAnnotation.annotation.id)
+              setSelectedId(null)
+            }}
+            onClose={() => setSelectedId(null)}
           />
         )}
 

@@ -22,6 +22,8 @@ export interface PageSearchMatch {
   active: boolean
 }
 
+export type ResizeHandle = "nw" | "ne" | "sw" | "se" | "n" | "s" | "e" | "w"
+
 const HIGHLIGHT_TOOLS: ToolId[] = ["highlight", "underline", "strikethrough"]
 const SHAPE_TOOLS: ToolId[] = ["rectangle", "ellipse", "line", "arrow"]
 
@@ -77,6 +79,7 @@ export function PageCanvas({
   const [editingTextId, setEditingTextId] = useState<string | null>(null)
   const [draftShape, setDraftShape] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
   const [draftStroke, setDraftStroke] = useState<Point[] | null>(null)
+  const [interactingBox, setInteractingBox] = useState(false)
 
   const dragRef = useRef<{
     id: string
@@ -84,6 +87,16 @@ export function PageCanvas({
     startClientY: number
     originX: number
     originY: number
+  } | null>(null)
+  const resizeRef = useRef<{
+    id: string
+    handle: ResizeHandle
+    startClientX: number
+    startClientY: number
+    origX: number
+    origY: number
+    origW: number
+    origH: number
   } | null>(null)
   const drawRef = useRef<{ startX: number; startY: number } | null>(null)
   const strokeRef = useRef<Point[]>([])
@@ -288,10 +301,8 @@ export function PageCanvas({
         return
       }
 
-      if (dragRef.current) {
-        const { dx, dy } = screenDeltaToPdf(e.clientX - dragRef.current.startClientX, e.clientY - dragRef.current.startClientY)
-        onUpdateAnnotation(dragRef.current.id, { x: dragRef.current.originX + dx, y: dragRef.current.originY + dy } as Partial<Annotation>)
-      }
+      // Dragging/resizing existing boxes is handled by the global listeners
+      // in the interactingBox effect (handles capture the pointer).
     },
     [tool, getLocalPoint, screenDeltaToPdf, onUpdateAnnotation],
   )
@@ -333,6 +344,7 @@ export function PageCanvas({
     }
 
     dragRef.current = null
+    resizeRef.current = null
   }, [tool, color, strokeWidth, fillShapes, draftShape, pageState.originalIndex, onAddAnnotation])
 
   const handleBoxPointerDown = useCallback(
@@ -352,6 +364,7 @@ export function PageCanvas({
           originX: annotation.x,
           originY: annotation.y,
         }
+        setInteractingBox(true)
       }
     },
     [tool, onSelectAnnotation, onRemoveAnnotation],
@@ -367,6 +380,91 @@ export function PageCanvas({
     },
     [tool, onSelectAnnotation, onRemoveAnnotation],
   )
+
+  const handleResizeStart = useCallback(
+    (e: React.PointerEvent, annotation: Annotation, handle: ResizeHandle) => {
+      e.stopPropagation()
+      if (tool !== "select") return
+      if (!("x" in annotation && "width" in annotation)) return
+      ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+      resizeRef.current = {
+        id: annotation.id,
+        handle,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        origX: annotation.x,
+        origY: annotation.y,
+        origW: annotation.width,
+        origH: annotation.height,
+      }
+      setInteractingBox(true)
+    },
+    [tool],
+  )
+
+  const handleDoubleClickAny = useCallback(
+    (annotation: Annotation) => {
+      if (tool === "select" && annotation.type === "text") {
+        onSelectAnnotation(annotation.id)
+        setEditingTextId(annotation.id)
+      }
+    },
+    [tool, onSelectAnnotation],
+  )
+
+  // Global move/up handlers for dragging or resizing an existing box. Handles
+  // (with pointer capture) intercept overlay events, so we track on window.
+  useEffect(() => {
+    if (!interactingBox) return
+
+    function onMove(e: PointerEvent) {
+      if (resizeRef.current) {
+        const r = resizeRef.current
+        const { dx, dy } = screenDeltaToPdf(e.clientX - r.startClientX, e.clientY - r.startClientY)
+        let x = r.origX
+        let y = r.origY
+        let w = r.origW
+        let h = r.origH
+        const MIN = 8
+        if (r.handle.includes("e")) w = r.origW + dx
+        if (r.handle.includes("w")) {
+          w = r.origW - dx
+          x = r.origX + dx
+        }
+        if (r.handle.includes("n")) h = r.origH + dy
+        if (r.handle.includes("s")) {
+          h = r.origH - dy
+          y = r.origY + dy
+        }
+        if (w < MIN) {
+          if (r.handle.includes("w")) x = r.origX + (r.origW - MIN)
+          w = MIN
+        }
+        if (h < MIN) {
+          if (r.handle.includes("s")) y = r.origY + (r.origH - MIN)
+          h = MIN
+        }
+        onUpdateAnnotation(r.id, { x, y, width: w, height: h } as Partial<Annotation>)
+      } else if (dragRef.current) {
+        const d = dragRef.current
+        const { dx, dy } = screenDeltaToPdf(e.clientX - d.startClientX, e.clientY - d.startClientY)
+        onUpdateAnnotation(d.id, { x: d.originX + dx, y: d.originY + dy } as Partial<Annotation>)
+      }
+    }
+
+    function onUp() {
+      dragRef.current = null
+      resizeRef.current = null
+      setInteractingBox(false)
+    }
+
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
+    return () => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+    }
+  }, [interactingBox, screenDeltaToPdf, onUpdateAnnotation])
 
   const setRef = useCallback(
     (el: HTMLDivElement | null) => {
@@ -412,8 +510,11 @@ export function PageCanvas({
               viewport={viewportRef.current!}
               selected={ann.id === selectedId}
               interactive={tool === "select" || tool === "eraser"}
+              resizable={tool === "select" && ann.id === selectedId}
               onPointerDownBox={handleBoxPointerDown}
               onClickAny={handleClickAny}
+              onDoubleClickAny={handleDoubleClickAny}
+              onResizeStart={handleResizeStart}
             />
           ))}
 

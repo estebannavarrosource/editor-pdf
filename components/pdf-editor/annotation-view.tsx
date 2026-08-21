@@ -3,14 +3,50 @@
 import type { Annotation } from "@/lib/pdf-types"
 import { pdfRectToViewportRect, toViewportPoint, type PageViewportLike } from "@/lib/pdf-coords"
 import { cn } from "@/lib/utils"
+import type { ResizeHandle } from "./page-canvas"
 
 interface AnnotationViewProps {
   annotation: Annotation
   viewport: PageViewportLike
   selected: boolean
   interactive: boolean
+  resizable?: boolean
   onPointerDownBox?: (e: React.PointerEvent, annotation: Annotation) => void
   onClickAny?: (annotation: Annotation) => void
+  onDoubleClickAny?: (annotation: Annotation) => void
+  onResizeStart?: (e: React.PointerEvent, annotation: Annotation, handle: ResizeHandle) => void
+}
+
+const HANDLES: { pos: ResizeHandle; cursor: string; style: React.CSSProperties }[] = [
+  { pos: "nw", cursor: "nwse-resize", style: { left: -4, top: -4 } },
+  { pos: "n", cursor: "ns-resize", style: { left: "calc(50% - 4px)", top: -4 } },
+  { pos: "ne", cursor: "nesw-resize", style: { right: -4, top: -4 } },
+  { pos: "e", cursor: "ew-resize", style: { right: -4, top: "calc(50% - 4px)" } },
+  { pos: "se", cursor: "nwse-resize", style: { right: -4, bottom: -4 } },
+  { pos: "s", cursor: "ns-resize", style: { left: "calc(50% - 4px)", bottom: -4 } },
+  { pos: "sw", cursor: "nesw-resize", style: { left: -4, bottom: -4 } },
+  { pos: "w", cursor: "ew-resize", style: { left: -4, top: "calc(50% - 4px)" } },
+]
+
+function ResizeHandles({
+  annotation,
+  onResizeStart,
+}: {
+  annotation: Annotation
+  onResizeStart?: (e: React.PointerEvent, annotation: Annotation, handle: ResizeHandle) => void
+}) {
+  return (
+    <>
+      {HANDLES.map((h) => (
+        <div
+          key={h.pos}
+          className="absolute z-10 size-2 rounded-[1px] border border-background bg-primary"
+          style={{ ...h.style, cursor: h.cursor, pointerEvents: "auto" }}
+          onPointerDown={(e) => onResizeStart?.(e, annotation, h.pos)}
+        />
+      ))}
+    </>
+  )
 }
 
 export function AnnotationView({
@@ -18,8 +54,11 @@ export function AnnotationView({
   viewport,
   selected,
   interactive,
+  resizable,
   onPointerDownBox,
   onClickAny,
+  onDoubleClickAny,
+  onResizeStart,
 }: AnnotationViewProps) {
   switch (annotation.type) {
     case "highlight":
@@ -111,6 +150,7 @@ export function AnnotationView({
           style={{ left: vr.left, top: vr.top, width: vr.width, height: vr.height, pointerEvents: interactive ? "auto" : "none" }}
           onPointerDown={(e) => onPointerDownBox?.(e, annotation)}
         >
+          {resizable && <ResizeHandles annotation={annotation} onResizeStart={onResizeStart} />}
           <svg className="h-full w-full overflow-visible">
             {annotation.type === "rectangle" && (
               <rect
@@ -189,7 +229,9 @@ export function AnnotationView({
             pointerEvents: interactive ? "auto" : "none",
           }}
           onPointerDown={(e) => onPointerDownBox?.(e, annotation)}
+          onDoubleClick={() => onDoubleClickAny?.(annotation)}
         >
+          {resizable && <ResizeHandles annotation={annotation} onResizeStart={onResizeStart} />}
           {annotation.text}
         </div>
       )
@@ -206,6 +248,7 @@ export function AnnotationView({
           style={{ left: vr.left, top: vr.top, width: vr.width, height: vr.height, pointerEvents: interactive ? "auto" : "none" }}
           onPointerDown={(e) => onPointerDownBox?.(e, annotation)}
         >
+          {resizable && <ResizeHandles annotation={annotation} onResizeStart={onResizeStart} />}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={annotation.dataUrl || "/placeholder.svg"} alt="Firma" className="h-full w-full select-none" draggable={false} />
         </div>
