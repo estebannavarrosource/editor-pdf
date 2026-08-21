@@ -122,6 +122,18 @@ export function EditorToolbar({
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-1.5 border-b border-border bg-card px-2">
+      <div className="flex items-center gap-2 pl-1 pr-1">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/dga-logo.png"
+          alt="Dirección General de Aguas"
+          className="h-9 w-auto rounded-sm bg-white p-0.5 ring-1 ring-border"
+        />
+        <span className="hidden text-sm font-semibold tracking-tight lg:inline">DGA-PDF</span>
+      </div>
+
+      <Separator orientation="vertical" className="h-7" />
+
       <Tooltip>
         <TooltipTrigger
           render={

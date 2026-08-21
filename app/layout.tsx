@@ -16,9 +16,9 @@ const _jetbrainsMono = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Foliopad — Editor de PDF',
+  title: 'DGA-PDF — Editor de PDF · Dirección General de Aguas',
   description:
-    'Visualiza, anota, firma y manipula tus documentos PDF directamente en el navegador. Exporta a PDF, imagenes o Word.',
+    'Editor de documentos PDF de la Dirección General de Aguas (Ministerio de Obras Públicas). Visualiza, anota, firma y manipula tus documentos directamente en el navegador. Exporta a PDF, imágenes o Word.',
   generator: 'v0.app',
   icons: {
     icon: [

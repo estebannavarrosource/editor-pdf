@@ -80,13 +80,21 @@ export function HomeScreen({ onFilesSelected, onCreateNew, onContinue, error }: 
     >
       {/* App bar */}
       <header className="flex items-center justify-between border-b border-border px-6 py-3">
-        <div className="flex items-center gap-2.5">
-          <div className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <FileText className="size-4.5" />
-          </div>
-          <div className="leading-none">
-            <p className="text-sm font-semibold tracking-tight">Foliopad</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">Editor de PDF</p>
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/dga-logo.png"
+            alt="Ministerio de Obras Públicas — Dirección General de Aguas"
+            className="h-11 w-auto rounded-sm bg-white p-1 ring-1 ring-border"
+          />
+          <div className="border-l border-border pl-3 leading-none">
+            <p className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
+              <span className="flex size-5 items-center justify-center rounded bg-primary text-primary-foreground">
+                <FileText className="size-3" />
+              </span>
+              DGA-PDF
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">Editor de documentos · Dirección General de Aguas</p>
           </div>
         </div>
         <span className="hidden items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground sm:flex">

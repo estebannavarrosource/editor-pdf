@@ -1,4 +1,6 @@
-# Foliopad — Editor de PDF
+# DGA-PDF — Editor de PDF
+
+**Dirección General de Aguas · Ministerio de Obras Públicas**
 
 Visualiza, anota, firma y manipula documentos PDF directamente en el navegador. Todo el procesamiento ocurre **en tu equipo** (client-side): los archivos nunca se suben a un servidor. Exporta a PDF, imágenes o Word.
 
