@@ -22,6 +22,7 @@ import {
   Upload,
   FilePlus2,
   ScanText,
+  Search,
   PanelLeft,
 } from "lucide-react"
 import type { ToolId } from "@/lib/pdf-types"
@@ -75,6 +76,7 @@ interface EditorToolbarProps {
   zoomPercent: number
   onZoomIn: () => void
   onZoomOut: () => void
+  onOpenSearch: () => void
   onOpenFile: () => void
   onImportAppend: () => void
   onOpenOcr: () => void
@@ -102,6 +104,7 @@ export function EditorToolbar({
   zoomPercent,
   onZoomIn,
   onZoomOut,
+  onOpenSearch,
   onOpenFile,
   onImportAppend,
   onOpenOcr,
@@ -280,6 +283,17 @@ export function EditorToolbar({
         </Tooltip>
 
         <Separator orientation="vertical" className="h-7" />
+
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button variant="ghost" size="icon" onClick={onOpenSearch} aria-label="Buscar en el documento">
+                <Search />
+              </Button>
+            }
+          />
+          <TooltipContent>Buscar (Ctrl+F)</TooltipContent>
+        </Tooltip>
 
         <Tooltip>
           <TooltipTrigger

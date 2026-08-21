@@ -5,6 +5,8 @@ import { toast } from "sonner"
 import { saveAs } from "file-saver"
 import { usePdfDocument } from "@/hooks/use-pdf-document"
 import { usePdfEditorStore } from "@/hooks/use-pdf-editor-store"
+import { usePdfSearch, type DocumentMatch } from "@/hooks/use-pdf-search"
+import type { SearchOptions } from "@/lib/pdf-search"
 import type { Annotation, ToolId } from "@/lib/pdf-types"
 import { buildExportedPdf } from "@/lib/pdf-engine"
 import { exportAsDocx, exportPagesAsImages } from "@/lib/pdf-export"
@@ -19,6 +21,8 @@ import { SignatureDialog } from "./signature-dialog"
 import { FormFillSheet } from "./form-fill-sheet"
 import { ExportDialog, type ExportFormat } from "./export-dialog"
 import { OcrDialog } from "./ocr-dialog"
+import { SearchBar } from "./search-bar"
+import type { PageSearchMatch } from "./page-canvas"
 import { Spinner } from "@/components/ui/spinner"
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -37,6 +41,7 @@ export function PdfEditor() {
 
   const { doc, pages: docPages, loading, error } = usePdfDocument(fileBytes, version)
   const store = usePdfEditorStore()
+  const { search } = usePdfSearch(doc)
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [tool, setTool] = useState<ToolId>("select")
@@ -54,6 +59,16 @@ export function PdfEditor() {
   const [exporting, setExporting] = useState(false)
   const [ocrDialogOpen, setOcrDialogOpen] = useState(false)
   const [currentPageIndex, setCurrentPageIndex] = useState(0)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [searchOptions, setSearchOptions] = useState<SearchOptions>({
+    caseSensitive: false,
+    ignoreAccents: true,
+    wholeWord: false,
+  })
+  const [matches, setMatches] = useState<DocumentMatch[]>([])
+  const [activeMatch, setActiveMatch] = useState(0)
+  const [searching, setSearching] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const appendInputRef = useRef<HTMLInputElement>(null)
@@ -92,6 +107,70 @@ export function PdfEditor() {
       cancelled = true
     }
   }, [doc])
+
+  // Visible pages in display order, used to order and scope search results.
+  const pageOrder = useMemo(
+    () => store.pages.filter((p) => !p.deleted).map((p) => p.originalIndex),
+    [store.pages],
+  )
+  const pageOrderKey = pageOrder.join(",")
+
+  // Run the search (debounced) whenever the query, options, document, or page order change.
+  useEffect(() => {
+    if (!searchOpen) return
+    const query = searchQuery.trim()
+    if (query.length === 0) {
+      setMatches([])
+      setActiveMatch(0)
+      setSearching(false)
+      return
+    }
+    let cancelled = false
+    setSearching(true)
+    const handle = setTimeout(async () => {
+      const results = await search(searchQuery, searchOptions, pageOrder)
+      if (cancelled) return
+      setMatches(results)
+      setActiveMatch(0)
+      setSearching(false)
+    }, 200)
+    return () => {
+      cancelled = true
+      clearTimeout(handle)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, searchOptions, searchOpen, search, pageOrderKey, version])
+
+  const goToMatch = useCallback(
+    (next: number) => {
+      setActiveMatch((prev) => {
+        if (matches.length === 0) return 0
+        const count = matches.length
+        return ((next % count) + count) % count
+      })
+    },
+    [matches.length],
+  )
+  const handleNextMatch = useCallback(() => goToMatch(activeMatch + 1), [goToMatch, activeMatch])
+  const handlePrevMatch = useCallback(() => goToMatch(activeMatch - 1), [goToMatch, activeMatch])
+
+  const openSearch = useCallback(() => setSearchOpen(true), [])
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false)
+    setMatches([])
+    setSearchQuery("")
+    setActiveMatch(0)
+  }, [])
+
+  const searchMatchesByPage = useMemo(() => {
+    const map = new Map<number, PageSearchMatch[]>()
+    matches.forEach((m, gi) => {
+      const list = map.get(m.pageIndex) ?? []
+      list.push({ key: `m-${gi}`, rects: m.rects, active: gi === activeMatch })
+      map.set(m.pageIndex, list)
+    })
+    return map
+  }, [matches, activeMatch])
 
   const handleFilesSelected = useCallback(async (files: File[]) => {
     setLoadError(null)
@@ -228,6 +307,11 @@ export function PdfEditor() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const isMod = e.metaKey || e.ctrlKey
+      if (isMod && e.key.toLowerCase() === "f") {
+        e.preventDefault()
+        openSearch()
+        return
+      }
       if (!isMod) return
       if (e.key === "z" && !e.shiftKey) {
         e.preventDefault()
@@ -239,7 +323,7 @@ export function PdfEditor() {
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [handleUndo, handleRedo])
+  }, [handleUndo, handleRedo, openSearch])
 
   const handleSignatureConfirm = useCallback((dataUrl: string) => {
     setActiveSignature(dataUrl)
@@ -343,6 +427,7 @@ export function PdfEditor() {
         zoomPercent={Math.round(scale * 100)}
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
+        onOpenSearch={openSearch}
         onOpenFile={() => fileInputRef.current?.click()}
         onImportAppend={() => appendInputRef.current?.click()}
         onOpenOcr={() => setOcrDialogOpen(true)}
@@ -379,7 +464,22 @@ export function PdfEditor() {
         }}
       />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="relative flex flex-1 overflow-hidden">
+        {searchOpen && doc && (
+          <SearchBar
+            query={searchQuery}
+            onQueryChange={setSearchQuery}
+            options={searchOptions}
+            onOptionsChange={setSearchOptions}
+            matchCount={matches.length}
+            activeIndex={activeMatch}
+            searching={searching}
+            onNext={handleNextMatch}
+            onPrev={handlePrevMatch}
+            onClose={closeSearch}
+          />
+        )}
+
         {sidebarOpen && doc && (
           <ThumbnailSidebar
             doc={doc}
@@ -411,6 +511,7 @@ export function PdfEditor() {
             fontSize={fontSize}
             fillShapes={fillShapes}
             annotationsByPage={store.annotations}
+            searchMatchesByPage={searchMatchesByPage}
             selectedId={selectedId}
             activeSignature={activeSignature}
             onSelectAnnotation={setSelectedId}

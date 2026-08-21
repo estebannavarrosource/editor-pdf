@@ -3,7 +3,7 @@
 import { useCallback, useRef } from "react"
 import type { PdfjsDocument } from "@/lib/pdfjs"
 import type { Annotation, PageState, ToolId } from "@/lib/pdf-types"
-import { PageCanvas } from "./page-canvas"
+import { PageCanvas, type PageSearchMatch } from "./page-canvas"
 
 interface PageScrollerProps {
   doc: PdfjsDocument
@@ -15,6 +15,7 @@ interface PageScrollerProps {
   fontSize: number
   fillShapes: boolean
   annotationsByPage: Record<number, Annotation[]>
+  searchMatchesByPage: Map<number, PageSearchMatch[]>
   selectedId: string | null
   activeSignature: string | null
   onSelectAnnotation: (id: string | null) => void
@@ -36,6 +37,7 @@ export function PageScroller({
   fontSize,
   fillShapes,
   annotationsByPage,
+  searchMatchesByPage,
   selectedId,
   activeSignature,
   onSelectAnnotation,
@@ -63,6 +65,7 @@ export function PageScroller({
           .filter((p) => !p.deleted)
           .map((pageState, displayIndex) => {
           const annotations = annotationsByPage[pageState.originalIndex] ?? []
+          const searchMatches = searchMatchesByPage.get(pageState.originalIndex) ?? []
           return (
             <PageCanvas
               key={pageState.originalIndex}
@@ -76,6 +79,7 @@ export function PageScroller({
               fontSize={fontSize}
               fillShapes={fillShapes}
               annotations={annotations}
+              searchMatches={searchMatches}
               selectedId={selectedId}
               activeSignature={activeSignature}
               onSelectAnnotation={onSelectAnnotation}

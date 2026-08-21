@@ -4,10 +4,23 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { TextLayer } from "pdfjs-dist"
 import type { PdfjsDocument } from "@/lib/pdfjs"
 import type { Annotation, PageState, Point, ToolId } from "@/lib/pdf-types"
-import { getTotalRotation, toPdfPoint, viewportRectToPdfRect, type PageViewportLike } from "@/lib/pdf-coords"
+import {
+  getTotalRotation,
+  pdfRectToViewportRect,
+  toPdfPoint,
+  viewportRectToPdfRect,
+  type PageViewportLike,
+} from "@/lib/pdf-coords"
 import { makeId } from "@/lib/id"
+import type { SearchRect } from "@/lib/pdf-search"
 import { AnnotationView } from "./annotation-view"
 import { cn } from "@/lib/utils"
+
+export interface PageSearchMatch {
+  key: string
+  rects: SearchRect[]
+  active: boolean
+}
 
 const HIGHLIGHT_TOOLS: ToolId[] = ["highlight", "underline", "strikethrough"]
 const SHAPE_TOOLS: ToolId[] = ["rectangle", "ellipse", "line", "arrow"]
@@ -23,6 +36,7 @@ interface PageCanvasProps {
   fontSize: number
   fillShapes: boolean
   annotations: Annotation[]
+  searchMatches: PageSearchMatch[]
   selectedId: string | null
   activeSignature: string | null
   onSelectAnnotation: (id: string | null) => void
@@ -44,6 +58,7 @@ export function PageCanvas({
   fontSize,
   fillShapes,
   annotations,
+  searchMatches,
   selectedId,
   activeSignature,
   onSelectAnnotation,
@@ -382,6 +397,11 @@ export function PageCanvas({
         style={{ userSelect: textLayerInteractive ? "text" : "none" }}
       />
 
+      {/* Search highlights */}
+      {viewportRef.current && searchMatches.length > 0 && (
+        <SearchHighlightLayer matches={searchMatches} viewport={viewportRef.current} />
+      )}
+
       {/* Existing annotations */}
       <div className="absolute inset-0" style={{ pointerEvents: "none" }}>
         {viewportRef.current &&
@@ -479,6 +499,48 @@ export function PageCanvas({
       <div className="pointer-events-none absolute -top-6 left-0 text-xs font-medium text-muted-foreground">
         Página {displayNumber}
       </div>
+    </div>
+  )
+}
+
+function SearchHighlightLayer({
+  matches,
+  viewport,
+}: {
+  matches: PageSearchMatch[]
+  viewport: PageViewportLike
+}) {
+  const activeRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: "center", behavior: "smooth" })
+  }, [matches])
+
+  return (
+    <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+      {matches.map((match) =>
+        match.rects.map((rect, i) => {
+          const vr = pdfRectToViewportRect(viewport, rect)
+          return (
+            <div
+              key={`${match.key}-${i}`}
+              ref={match.active && i === 0 ? activeRef : undefined}
+              className={cn(
+                "absolute rounded-[1px]",
+                match.active ? "bg-search-active" : "bg-search-match",
+              )}
+              style={{
+                left: vr.left,
+                top: vr.top,
+                width: vr.width,
+                height: vr.height,
+                opacity: match.active ? 0.6 : 0.42,
+                outline: match.active ? "1.5px solid var(--search-active)" : "none",
+              }}
+            />
+          )
+        }),
+      )}
     </div>
   )
 }
