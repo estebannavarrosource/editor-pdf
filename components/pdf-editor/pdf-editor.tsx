@@ -17,7 +17,7 @@ import { insertBlankPage, duplicatePage, extractPagesPdf, createBlankPdf, type N
 import { saveSession, loadSession } from "@/lib/pdf-session"
 import { HomeScreen } from "./home-screen"
 import { EditorToolbar } from "./editor-toolbar"
-import { ThumbnailSidebar } from "./thumbnail-sidebar"
+import { ToolsPanel } from "./tools-panel"
 import { PageScroller } from "./page-scroller"
 import { SignatureDialog } from "./signature-dialog"
 import { FormFillSheet } from "./form-fill-sheet"
@@ -48,6 +48,7 @@ export function PdfEditor() {
   const { search } = usePdfSearch(doc)
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarTab, setSidebarTab] = useState<"tools" | "pages">("tools")
   const [tool, setTool] = useState<ToolId>("select")
   const [color, setColor] = useState("#1d3fae")
   const [strokeWidth, setStrokeWidth] = useState(3)
@@ -488,6 +489,42 @@ export function PdfEditor() {
   const zoomIn = useCallback(() => setScale((s) => Math.min(MAX_SCALE, s + SCALE_STEP)), [])
   const zoomOut = useCallback(() => setScale((s) => Math.max(MIN_SCALE, s - SCALE_STEP)), [])
 
+  const currentDisplayPos = useMemo(() => {
+    const pos = pageOrder.indexOf(currentPageIndex)
+    return pos === -1 ? 0 : pos
+  }, [pageOrder, currentPageIndex])
+
+  const handlePrevPage = useCallback(() => {
+    const pos = pageOrder.indexOf(currentPageIndex)
+    if (pos > 0) jumpToPage(pageOrder[pos - 1])
+  }, [pageOrder, currentPageIndex, jumpToPage])
+
+  const handleNextPage = useCallback(() => {
+    const pos = pageOrder.indexOf(currentPageIndex)
+    if (pos !== -1 && pos < pageOrder.length - 1) jumpToPage(pageOrder[pos + 1])
+  }, [pageOrder, currentPageIndex, jumpToPage])
+
+  const handleJumpToPageNumber = useCallback(
+    (pageNumber: number) => {
+      const pos = Math.min(Math.max(pageNumber, 1), pageOrder.length) - 1
+      const originalIndex = pageOrder[pos]
+      if (originalIndex !== undefined) jumpToPage(originalIndex)
+    },
+    [pageOrder, jumpToPage],
+  )
+
+  const handleGoHome = useCallback(() => {
+    setFileBytes(null)
+    setFileName(null)
+    setSelectedId(null)
+    setSearchOpen(false)
+    setTool("select")
+  }, [])
+
+  const handlePrint = useCallback(() => {
+    window.print()
+  }, [])
+
   const annotationsByPageMap = useMemo(() => {
     const map = new Map<number, Annotation[]>()
     for (const [key, value] of Object.entries(store.annotations)) {
@@ -589,15 +626,16 @@ export function PdfEditor() {
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
         onOpenSearch={openSearch}
-        onCreateNew={() => setNewPdfDialogOpen(true)}
-        onOpenFile={() => fileInputRef.current?.click()}
-        onImportAppend={() => appendInputRef.current?.click()}
-        onOpenOcr={() => setOcrDialogOpen(true)}
         onOpenExport={() => setExportDialogOpen(true)}
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
-        onOpenSignature={() => setSignatureDialogOpen(true)}
-        onOpenForm={() => setFormSheetOpen(true)}
-        hasFormFields={formFields.length > 0}
+        onGoHome={handleGoHome}
+        onQuickSave={() => handleExport("pdf")}
+        onPrint={handlePrint}
+        currentPage={currentDisplayPos + 1}
+        totalPages={Math.max(pageOrder.length, 1)}
+        onPrevPage={handlePrevPage}
+        onNextPage={handleNextPage}
+        onJumpToPageNumber={handleJumpToPageNumber}
       />
 
       <input
@@ -643,9 +681,21 @@ export function PdfEditor() {
         )}
 
         {sidebarOpen && doc && (
-          <ThumbnailSidebar
+          <ToolsPanel
             doc={doc}
             pages={store.pages}
+            tool={tool}
+            hasFormFields={formFields.length > 0}
+            activeTab={sidebarTab}
+            onActiveTabChange={setSidebarTab}
+            onToolChange={setTool}
+            onCreateNew={() => setNewPdfDialogOpen(true)}
+            onOpenFile={() => fileInputRef.current?.click()}
+            onImportAppend={() => appendInputRef.current?.click()}
+            onOpenSignature={() => setSignatureDialogOpen(true)}
+            onOpenForm={() => setFormSheetOpen(true)}
+            onOpenExport={() => setExportDialogOpen(true)}
+            onOpenOcr={() => setOcrDialogOpen(true)}
             onJumpToPage={jumpToPage}
             onRotate={store.rotatePage}
             onToggleDelete={store.toggleDeletePage}

@@ -49,10 +49,9 @@ export function ThumbnailSidebar({
   const [overIndex, setOverIndex] = useState<number | null>(null)
 
   return (
-    <aside className="flex h-full w-44 flex-col border-r border-border bg-sidebar">
-      <div className="flex items-center justify-between px-3 py-2.5">
-        <span className="text-xs font-semibold tracking-wide text-sidebar-foreground/70 uppercase">Páginas</span>
-        <span className="text-xs text-muted-foreground">{pages.filter((p) => !p.deleted).length}</span>
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-end px-3 py-2">
+        <span className="text-xs text-muted-foreground">{pages.filter((p) => !p.deleted).length} página(s)</span>
       </div>
       <ScrollArea className="flex-1">
         <ol className="flex flex-col gap-2 px-3 pb-4">
@@ -194,6 +193,6 @@ export function ThumbnailSidebar({
           Página en blanco
         </Button>
       </div>
-    </aside>
+    </div>
   )
 }

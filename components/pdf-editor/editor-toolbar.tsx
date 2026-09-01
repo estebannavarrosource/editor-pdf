@@ -1,30 +1,23 @@
 "use client"
 
+import { useState } from "react"
 import {
+  Home,
+  X,
+  Save,
+  Printer,
+  Search,
+  ChevronUp,
+  ChevronDown,
   MousePointer2,
   Hand,
-  Highlighter,
-  Underline,
-  Strikethrough,
-  Pencil,
-  Square,
-  Circle,
-  Minus,
-  ArrowUpRight,
-  Type,
-  PenTool,
-  Eraser,
-  Undo2,
-  Redo2,
   ZoomIn,
   ZoomOut,
+  Undo2,
+  Redo2,
   FileDown,
-  Upload,
-  FilePlus2,
-  FilePlus,
-  ScanText,
-  Search,
   PanelLeft,
+  Check,
 } from "lucide-react"
 import type { ToolId } from "@/lib/pdf-types"
 import { Button } from "@/components/ui/button"
@@ -34,31 +27,23 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Slider } from "@/components/ui/slider"
 import { cn } from "@/lib/utils"
 
-const TOOL_GROUPS: { id: ToolId; icon: typeof MousePointer2; label: string }[][] = [
-  [
-    { id: "select", icon: MousePointer2, label: "Seleccionar" },
-    { id: "pan", icon: Hand, label: "Mover vista" },
-  ],
-  [
-    { id: "highlight", icon: Highlighter, label: "Resaltar texto" },
-    { id: "underline", icon: Underline, label: "Subrayar texto" },
-    { id: "strikethrough", icon: Strikethrough, label: "Tachar texto" },
-  ],
-  [
-    { id: "ink", icon: Pencil, label: "Dibujo libre" },
-    { id: "rectangle", icon: Square, label: "Rectángulo" },
-    { id: "ellipse", icon: Circle, label: "Elipse" },
-    { id: "line", icon: Minus, label: "Línea" },
-    { id: "arrow", icon: ArrowUpRight, label: "Flecha" },
-    { id: "text", icon: Type, label: "Texto" },
-  ],
-  [
-    { id: "sign", icon: PenTool, label: "Firmar" },
-    { id: "eraser", icon: Eraser, label: "Borrar anotación" },
-  ],
-]
-
 const SWATCHES = ["#1d3fae", "#dc2626", "#059669", "#d97706", "#7c3aed", "#111827"]
+
+const TOOL_LABELS: Record<ToolId, string> = {
+  select: "Seleccionar",
+  pan: "Mover vista",
+  highlight: "Resaltar texto",
+  underline: "Subrayar texto",
+  strikethrough: "Tachar texto",
+  ink: "Dibujo libre",
+  rectangle: "Rectángulo",
+  ellipse: "Elipse",
+  line: "Línea",
+  arrow: "Flecha",
+  text: "Texto",
+  sign: "Firma",
+  eraser: "Borrador",
+}
 
 interface EditorToolbarProps {
   fileName: string | null
@@ -78,15 +63,16 @@ interface EditorToolbarProps {
   onZoomIn: () => void
   onZoomOut: () => void
   onOpenSearch: () => void
-  onCreateNew: () => void
-  onOpenFile: () => void
-  onImportAppend: () => void
-  onOpenOcr: () => void
   onOpenExport: () => void
   onToggleSidebar: () => void
-  onOpenSignature: () => void
-  onOpenForm: () => void
-  hasFormFields: boolean
+  onGoHome: () => void
+  onQuickSave: () => void
+  onPrint: () => void
+  currentPage: number
+  totalPages: number
+  onPrevPage: () => void
+  onNextPage: () => void
+  onJumpToPageNumber: (page: number) => void
 }
 
 export function EditorToolbar({
@@ -107,148 +93,175 @@ export function EditorToolbar({
   onZoomIn,
   onZoomOut,
   onOpenSearch,
-  onCreateNew,
-  onOpenFile,
-  onImportAppend,
-  onOpenOcr,
   onOpenExport,
   onToggleSidebar,
-  onOpenSignature,
-  onOpenForm,
-  hasFormFields,
+  onGoHome,
+  onQuickSave,
+  onPrint,
+  currentPage,
+  totalPages,
+  onPrevPage,
+  onNextPage,
+  onJumpToPageNumber,
 }: EditorToolbarProps) {
+  const [pageInput, setPageInput] = useState(String(currentPage))
   const showColorAndWidth = tool !== "select" && tool !== "pan" && tool !== "eraser"
   const showFill = ["rectangle", "ellipse"].includes(tool)
+  const showContextualBar = showColorAndWidth
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-1.5 border-b border-border bg-card px-2">
-      <div className="flex items-center gap-2 pl-1 pr-1">
+    <header className="flex shrink-0 flex-col border-b border-border bg-card">
+      {/* Row 1: document tabs */}
+      <div className="flex h-10 items-center gap-0.5 border-b border-border px-2">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/dga-logo.png"
           alt="Dirección General de Aguas"
-          className="h-9 w-auto rounded-sm bg-white p-0.5 ring-1 ring-border"
+          className="mr-1.5 h-7 w-auto rounded-sm bg-white p-0.5 ring-1 ring-border"
         />
-        <span className="hidden text-sm font-semibold tracking-tight lg:inline">DGA-PDF</span>
+        <button
+          type="button"
+          onClick={onGoHome}
+          className="flex items-center gap-1.5 rounded-t-md border border-transparent px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <Home className="size-3.5" />
+          Inicio
+        </button>
+        <div className="flex items-center gap-2 rounded-t-md border border-border border-b-transparent bg-background px-3 py-1.5 text-sm font-medium text-foreground">
+          <span className="max-w-52 truncate">{fileName ?? "Documento"}</span>
+          <button
+            type="button"
+            onClick={onGoHome}
+            aria-label="Cerrar documento"
+            className="rounded-sm p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
       </div>
 
-      <Separator orientation="vertical" className="h-7" />
+      {/* Row 2: page-level controls */}
+      <div className="flex h-12 items-center gap-1 px-2">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button variant="ghost" size="icon" onClick={onToggleSidebar} aria-label="Mostrar/ocultar panel">
+                <PanelLeft />
+              </Button>
+            }
+          />
+          <TooltipContent>Panel de herramientas</TooltipContent>
+        </Tooltip>
 
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button variant="ghost" size="icon" onClick={onToggleSidebar} aria-label="Mostrar/ocultar páginas">
-              <PanelLeft />
-            </Button>
-          }
-        />
-        <TooltipContent>Panel de páginas</TooltipContent>
-      </Tooltip>
+        <Separator orientation="vertical" className="h-7" />
 
-      <Separator orientation="vertical" className="h-7" />
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button variant="ghost" size="icon" onClick={onQuickSave} aria-label="Guardar">
+                <Save />
+              </Button>
+            }
+          />
+          <TooltipContent>Guardar (descarga una copia en PDF)</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button variant="ghost" size="icon" onClick={onPrint} aria-label="Imprimir">
+                <Printer />
+              </Button>
+            }
+          />
+          <TooltipContent>Imprimir</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button variant="ghost" size="icon" onClick={onOpenSearch} aria-label="Buscar en el documento">
+                <Search />
+              </Button>
+            }
+          />
+          <TooltipContent>Buscar (Ctrl+F)</TooltipContent>
+        </Tooltip>
 
-      <div className="flex min-w-0 items-center gap-2 pr-2">
-        <span className="hidden max-w-40 truncate text-sm font-medium text-foreground sm:inline">
-          {fileName ?? "Sin documento"}
-        </span>
-      </div>
-
-      <Separator orientation="vertical" className="h-7" />
-
-      <div className="flex items-center gap-1 overflow-x-auto">
-        {TOOL_GROUPS.map((group, gi) => (
-          <div key={gi} className="flex items-center gap-0.5">
-            {gi > 0 && <Separator orientation="vertical" className="mx-1 h-7" />}
-            {group.map(({ id, icon: Icon, label }) => (
-              <Tooltip key={id}>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      variant={tool === id ? "default" : "ghost"}
-                      size="icon"
-                      onClick={() => (id === "sign" ? onOpenSignature() : onToolChange(id))}
-                      aria-label={label}
-                      aria-pressed={tool === id}
-                    >
-                      <Icon />
-                    </Button>
-                  }
-                />
-                <TooltipContent>{label}</TooltipContent>
-              </Tooltip>
-            ))}
-          </div>
-        ))}
-      </div>
-
-      {showColorAndWidth && (
-        <>
-          <Separator orientation="vertical" className="h-7" />
-          <Popover>
-            <PopoverTrigger
-              render={
-                <Button variant="ghost" size="icon" aria-label="Color">
-                  <span className="size-4 rounded-full border border-border" style={{ backgroundColor: color }} />
-                </Button>
-              }
-            />
-            <PopoverContent className="w-48">
-              <div className="grid grid-cols-6 gap-2">
-                {SWATCHES.map((swatch) => (
-                  <button
-                    key={swatch}
-                    type="button"
-                    onClick={() => onColorChange(swatch)}
-                    aria-label={`Color ${swatch}`}
-                    className={cn(
-                      "size-6 rounded-full border-2 transition-transform hover:scale-110",
-                      color === swatch ? "border-foreground" : "border-transparent",
-                    )}
-                    style={{ backgroundColor: swatch }}
-                  />
-                ))}
-              </div>
-              {tool !== "highlight" && tool !== "underline" && tool !== "strikethrough" && (
-                <div className="mt-3 flex flex-col gap-1.5">
-                  <span className="text-xs text-muted-foreground">Grosor</span>
-                  <Slider
-                    value={strokeWidth}
-                    min={1}
-                    max={12}
-                    step={1}
-                    onValueChange={(v) => onStrokeWidthChange(v as number)}
-                  />
-                </div>
-              )}
-              {showFill && (
-                <label className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={fillShapes}
-                    onChange={(e) => onFillShapesChange(e.target.checked)}
-                    className="size-3.5 accent-primary"
-                  />
-                  Rellenar forma
-                </label>
-              )}
-            </PopoverContent>
-          </Popover>
-        </>
-      )}
-
-      <div className="ml-auto flex items-center gap-1">
-        {hasFormFields && (
+        <div className="mx-auto flex items-center gap-1">
           <Tooltip>
             <TooltipTrigger
               render={
-                <Button variant="outline" size="sm" onClick={onOpenForm}>
-                  Formulario
+                <Button variant="ghost" size="icon" onClick={onPrevPage} aria-label="Página anterior">
+                  <ChevronUp />
                 </Button>
               }
             />
-            <TooltipContent>Rellenar campos del formulario</TooltipContent>
+            <TooltipContent>Página anterior</TooltipContent>
           </Tooltip>
-        )}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              const n = Number.parseInt(pageInput, 10)
+              if (Number.isFinite(n)) onJumpToPageNumber(n)
+            }}
+            className="flex items-center gap-1 text-xs text-muted-foreground"
+          >
+            <input
+              value={pageInput}
+              onChange={(e) => setPageInput(e.target.value)}
+              onFocus={() => setPageInput(String(currentPage))}
+              onBlur={() => setPageInput(String(currentPage))}
+              inputMode="numeric"
+              aria-label="Número de página"
+              className="h-7 w-10 rounded-sm border border-border bg-background text-center text-xs tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <span>/ {totalPages}</span>
+          </form>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button variant="ghost" size="icon" onClick={onNextPage} aria-label="Página siguiente">
+                  <ChevronDown />
+                </Button>
+              }
+            />
+            <TooltipContent>Página siguiente</TooltipContent>
+          </Tooltip>
+        </div>
+
+        <Separator orientation="vertical" className="h-7" />
+
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant={tool === "select" ? "default" : "ghost"}
+                size="icon"
+                onClick={() => onToolChange("select")}
+                aria-label="Seleccionar"
+                aria-pressed={tool === "select"}
+              >
+                <MousePointer2 />
+              </Button>
+            }
+          />
+          <TooltipContent>Seleccionar</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant={tool === "pan" ? "default" : "ghost"}
+                size="icon"
+                onClick={() => onToolChange("pan")}
+                aria-label="Mover vista"
+                aria-pressed={tool === "pan"}
+              >
+                <Hand />
+              </Button>
+            }
+          />
+          <TooltipContent>Mover vista</TooltipContent>
+        </Tooltip>
 
         <Separator orientation="vertical" className="h-7" />
 
@@ -299,66 +312,77 @@ export function EditorToolbar({
 
         <Separator orientation="vertical" className="h-7" />
 
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button variant="ghost" size="icon" onClick={onOpenSearch} aria-label="Buscar en el documento">
-                <Search />
-              </Button>
-            }
-          />
-          <TooltipContent>Buscar (Ctrl+F)</TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button variant="ghost" size="icon" onClick={onOpenOcr} aria-label="Reconocer texto (OCR)">
-                <ScanText />
-              </Button>
-            }
-          />
-          <TooltipContent>Reconocer texto (OCR)</TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button variant="ghost" size="icon" onClick={onCreateNew} aria-label="Crear documento en blanco">
-                <FilePlus />
-              </Button>
-            }
-          />
-          <TooltipContent>Nuevo documento en blanco</TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button variant="ghost" size="icon" onClick={onImportAppend} aria-label="Importar y anexar archivos">
-                <FilePlus2 />
-              </Button>
-            }
-          />
-          <TooltipContent>Importar y anexar (PDF / imágenes)</TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button variant="ghost" size="icon" onClick={onOpenFile} aria-label="Abrir archivo">
-                <Upload />
-              </Button>
-            }
-          />
-          <TooltipContent>Abrir archivo (reemplazar)</TooltipContent>
-        </Tooltip>
-
         <Button onClick={onOpenExport} size="sm">
           <FileDown data-icon="inline-start" />
           Exportar
         </Button>
       </div>
+
+      {/* Row 3: contextual annotation bar, shown only while a drawing/annotation tool is active */}
+      {showContextualBar && (
+        <div className="flex h-11 items-center gap-3 border-t border-border bg-muted/40 px-3">
+          <span className="text-xs font-medium text-foreground">{TOOL_LABELS[tool]}</span>
+          <Separator orientation="vertical" className="h-6" />
+
+          <Popover>
+            <PopoverTrigger
+              render={
+                <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2" aria-label="Color">
+                  <span className="size-4 rounded-full border border-border" style={{ backgroundColor: color }} />
+                  <span className="text-xs text-muted-foreground">Color</span>
+                </Button>
+              }
+            />
+            <PopoverContent className="w-48">
+              <div className="grid grid-cols-6 gap-2">
+                {SWATCHES.map((swatch) => (
+                  <button
+                    key={swatch}
+                    type="button"
+                    onClick={() => onColorChange(swatch)}
+                    aria-label={`Color ${swatch}`}
+                    className={cn(
+                      "size-6 rounded-full border-2 transition-transform hover:scale-110",
+                      color === swatch ? "border-foreground" : "border-transparent",
+                    )}
+                    style={{ backgroundColor: swatch }}
+                  />
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {tool !== "highlight" && tool !== "underline" && tool !== "strikethrough" && (
+            <div className="flex w-40 items-center gap-2">
+              <span className="text-xs text-muted-foreground">Grosor</span>
+              <Slider
+                value={strokeWidth}
+                min={1}
+                max={12}
+                step={1}
+                onValueChange={(v) => onStrokeWidthChange(v as number)}
+              />
+            </div>
+          )}
+
+          {showFill && (
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={fillShapes}
+                onChange={(e) => onFillShapesChange(e.target.checked)}
+                className="size-3.5 accent-primary"
+              />
+              Rellenar forma
+            </label>
+          )}
+
+          <Button variant="outline" size="sm" className="ml-auto h-8 gap-1.5" onClick={() => onToolChange("select")}>
+            <Check className="size-3.5" />
+            Listo
+          </Button>
+        </div>
+      )}
     </header>
   )
 }
