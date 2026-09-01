@@ -93,15 +93,18 @@ export async function duplicatePage(
   const newIndex = doc.getPageCount()
   const [copied] = await doc.copyPages(doc, [source.originalIndex])
   doc.addPage(copied)
-  const { width, height } = copied.getSize()
   const bytes = await doc.save()
 
+  // Some source pages inherit their MediaBox from an ancestor Pages node
+  // instead of setting it directly, which makes `copied.getSize()` throw
+  // after copyPages. We already know the dimensions from the existing
+  // PageState, so reuse those instead of re-deriving them from the copy.
   const newPage: PageState = {
     originalIndex: newIndex,
     rotation: source.rotation,
     deleted: false,
-    width,
-    height,
+    width: source.width,
+    height: source.height,
   }
   const nextPages = [...pages]
   nextPages.splice(fullIndex + 1, 0, newPage)
