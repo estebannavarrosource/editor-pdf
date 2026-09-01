@@ -55,11 +55,15 @@ export function SearchBar({
           onChange={(e) => onQueryChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.nativeEvent.isComposing || e.keyCode === 229) return
-            if (e.key === "Enter") {
+            // Some browsers/input methods report e.key as "Unidentified" for Enter/Escape,
+            // so fall back to e.code and the legacy keyCode as well.
+            const isEnter = e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter" || e.keyCode === 13
+            const isEscape = e.key === "Escape" || e.code === "Escape" || e.keyCode === 27
+            if (isEnter) {
               e.preventDefault()
               if (e.shiftKey) onPrev()
               else onNext()
-            } else if (e.key === "Escape") {
+            } else if (isEscape) {
               e.preventDefault()
               onClose()
             }
