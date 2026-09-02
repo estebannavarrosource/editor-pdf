@@ -554,6 +554,12 @@ export function PdfEditor() {
         iframe.remove()
       }
 
+      // Navigating the iframe directly to a blob: URL puts it in a
+      // cross-origin browsing context in some browsers, which blocks
+      // access to its contentWindow. Using srcdoc keeps the iframe's
+      // document same-origin with the parent, while an <embed> inside
+      // it renders the PDF so printing from that window only includes
+      // the document, not the editor UI.
       iframe.onload = () => {
         const win = iframe.contentWindow
         if (!win) {
@@ -561,14 +567,30 @@ export function PdfEditor() {
           toast.error("No se pudo preparar el documento para imprimir")
           return
         }
-        win.addEventListener("afterprint", cleanup, { once: true })
-        win.focus()
-        win.print()
-        // Fallback cleanup in case the browser never fires afterprint.
-        setTimeout(cleanup, 60_000)
+        const embed = win.document.querySelector("embed")
+
+        let printed = false
+        const triggerPrint = () => {
+          if (printed) return
+          printed = true
+          win.addEventListener("afterprint", cleanup, { once: true })
+          win.focus()
+          win.print()
+          // Fallback cleanup in case the browser never fires afterprint.
+          setTimeout(cleanup, 60_000)
+        }
+
+        if (embed) {
+          embed.addEventListener("load", triggerPrint, { once: true })
+          // Some browsers never fire load on <embed>; fall back to a
+          // short delay so printing still happens.
+          setTimeout(triggerPrint, 500)
+        } else {
+          triggerPrint()
+        }
       }
 
-      iframe.src = url
+      iframe.srcdoc = `<!DOCTYPE html><html><head><style>html,body{margin:0;height:100%}embed{width:100%;height:100%}</style></head><body><embed src="${url}" type="application/pdf" /></body></html>`
       document.body.appendChild(iframe)
     } catch (e) {
       console.error("[v0] print failed", e)
