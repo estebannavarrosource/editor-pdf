@@ -532,15 +532,28 @@ export function PdfEditor() {
 
   const handlePrint = useCallback(async () => {
     if (!fileBytes) return
-    const printRootId = "pdf-print-root"
-    document.getElementById(printRootId)?.remove()
+
+    // The editor preview can itself be embedded inside a cross-origin
+    // iframe (e.g. the v0 preview harness). In that case, calling
+    // window.print() on the current window - or printing via a same-page
+    // iframe/embed - makes the browser walk the frame ancestry and throws
+    // a SecurityError when it reaches the cross-origin parent. Opening a
+    // brand-new top-level window (a sibling browsing context, not nested
+    // inside that parent) sidesteps this entirely: printing happens there
+    // in complete isolation from the embedding page.
+    const printWindow = window.open("", "_blank")
+    if (!printWindow) {
+      toast.error("El navegador bloqueó la ventana de impresión. Permite las ventanas emergentes e inténtalo de nuevo.")
+      return
+    }
+    printWindow.document.write(
+      "<!DOCTYPE html><html><head><title>Imprimiendo...</title></head><body><p>Preparando documento para imprimir...</p></body></html>",
+    )
 
     try {
       // Bake annotations and page changes into real PDF content, then
-      // rasterize each page in the current window (no iframe/embed, so
-      // there is never a cross-origin browsing context to worry about).
-      // A print-only container is toggled on via CSS @media print rules
-      // in globals.css, so the print dialog only ever sees the document.
+      // rasterize each page so the print window only ever contains plain
+      // images - never the PDF or the editor UI.
       const bytes = await buildExportedPdf({
         originalBytes: fileBytes.slice(0),
         pages: store.pages,
@@ -550,9 +563,7 @@ export function PdfEditor() {
       const pdfjs = getPdfjs()
       const printDoc = await pdfjs.getDocument({ data: bytes.slice() }).promise
 
-      const container = document.createElement("div")
-      container.id = printRootId
-
+      const imageUrls: string[] = []
       for (let i = 1; i <= printDoc.numPages; i++) {
         const page = await printDoc.getPage(i)
         const viewport = page.getViewport({ scale: 2 })
@@ -562,27 +573,45 @@ export function PdfEditor() {
         const ctx = canvas.getContext("2d")
         if (!ctx) continue
         await page.render({ canvasContext: ctx, canvas, viewport }).promise
-        const img = document.createElement("img")
-        img.src = canvas.toDataURL("image/png")
-        container.appendChild(img)
+        imageUrls.push(canvas.toDataURL("image/png"))
       }
 
-      document.body.appendChild(container)
+      if (printWindow.closed) return
 
-      const cleanup = () => {
-        container.remove()
-        window.removeEventListener("afterprint", cleanup)
+      const imagesHtml = imageUrls.map((src) => `<img src="${src}" alt="" />`).join("")
+
+      printWindow.document.open()
+      printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<title>${fileName ?? "documento"}</title>
+<style>
+  html, body { margin: 0; padding: 0; }
+  img { display: block; width: 100%; page-break-after: always; }
+  img:last-child { page-break-after: auto; }
+</style>
+</head>
+<body>${imagesHtml}</body>
+</html>`)
+      printWindow.document.close()
+
+      let printed = false
+      const triggerPrint = () => {
+        if (printed || printWindow.closed) return
+        printed = true
+        printWindow.focus()
+        printWindow.print()
       }
-      window.addEventListener("afterprint", cleanup)
-      window.print()
-      // Fallback cleanup in case the browser never fires afterprint.
-      setTimeout(cleanup, 60_000)
+      printWindow.onload = triggerPrint
+      // Some browsers don't reliably fire onload after document.write();
+      // fall back to triggering print shortly after.
+      setTimeout(triggerPrint, 300)
     } catch (e) {
       console.error("[v0] print failed", e)
       toast.error("No se pudo preparar el documento para imprimir")
-      document.getElementById(printRootId)?.remove()
+      printWindow.close()
     }
-  }, [fileBytes, store.pages, annotationsByPageMap])
+  }, [fileBytes, fileName, store.pages, annotationsByPageMap])
 
   const handleFormFieldChange = useCallback((name: string, updated: FormFieldDescriptor) => {
     setFormFields((prev) => prev.map((f) => (f.name === name ? updated : f)))
