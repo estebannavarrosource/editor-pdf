@@ -534,7 +534,9 @@ export function PdfEditor() {
 
     try {
       // Bake annotations and page changes into real PDF content so what
-      // gets opened is the document itself, never the editor UI.
+      // gets opened is the document itself, never the editor UI. This is
+      // a local, in-memory operation (no network round trip), so it's
+      // fast even though it's awaited before opening the tab.
       const bytes = await buildExportedPdf({
         originalBytes: fileBytes.slice(0),
         pages: store.pages,
@@ -542,14 +544,14 @@ export function PdfEditor() {
       })
       const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }))
 
-      // Open the PDF in a brand-new top-level tab (never an iframe inside
-      // this page) so the browser's native PDF viewer renders it. That
-      // viewer has its own print button/shortcut, which is the most
-      // reliable way to print a PDF: it avoids calling window.print()
-      // from our script entirely, side-stepping the SecurityError thrown
-      // when this app is itself embedded in a cross-origin iframe (the
-      // preview harness) and print() tries to walk up to a blocked
-      // window.top.
+      // Open the PDF directly in a brand-new top-level tab in one step
+      // (never a placeholder + later navigation, which just adds an
+      // extra round trip and makes the flow feel slower). The browser's
+      // native PDF viewer renders it there with its own print button, so
+      // printing never calls window.print() from our script - avoiding
+      // the SecurityError thrown when this app is itself embedded in a
+      // cross-origin iframe (the preview harness) and print() tries to
+      // walk up to a blocked window.top.
       const printTab = window.open(url, "_blank", "noopener,noreferrer")
 
       if (!printTab) {
@@ -557,22 +559,6 @@ export function PdfEditor() {
         URL.revokeObjectURL(url)
         return
       }
-
-      toast.info("Se abrió el documento en una nueva pestaña. Usa el botón de imprimir del visor de PDF (o Ctrl/Cmd+P).")
-
-      // Best-effort: try to trigger the print dialog automatically once
-      // the tab has loaded. This can throw a SecurityError in sandboxed
-      // preview environments, so failures here are silently ignored -
-      // the user can always print manually from the opened tab.
-      const tryAutoPrint = () => {
-        try {
-          printTab.focus()
-          printTab.print()
-        } catch {
-          // Ignore - manual printing from the opened tab still works.
-        }
-      }
-      setTimeout(tryAutoPrint, 500)
 
       // Clean up the object URL once the print tab is closed, polling
       // since cross-origin/new-tab windows don't reliably fire events
