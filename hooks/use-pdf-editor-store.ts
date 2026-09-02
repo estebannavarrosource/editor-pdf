@@ -114,6 +114,62 @@ export function usePdfEditorStore() {
     [mutate],
   )
 
+  /** Bulk version of {@link rotatePage}: rotates several pages as a single history entry. */
+  const rotatePages = useCallback(
+    (originalIndexes: number[], delta: 90 | -90) => {
+      const set = new Set(originalIndexes)
+      mutate((draft) => ({
+        pages: draft.pages.map((pg) =>
+          set.has(pg.originalIndex)
+            ? { ...pg, rotation: ((((pg.rotation + delta) % 360) + 360) % 360) as PageState["rotation"] }
+            : pg,
+        ),
+        annotations: draft.annotations,
+      }))
+    },
+    [mutate],
+  )
+
+  /** Bulk, decisive version of {@link toggleDeletePage}: always marks as deleted (not a toggle). */
+  const deletePages = useCallback(
+    (originalIndexes: number[]) => {
+      const set = new Set(originalIndexes)
+      mutate((draft) => ({
+        pages: draft.pages.map((pg) => (set.has(pg.originalIndex) ? { ...pg, deleted: true } : pg)),
+        annotations: draft.annotations,
+      }))
+    },
+    [mutate],
+  )
+
+  /**
+   * Moves the block of pages at `fromIndices` (full-array positions,
+   * preserving their relative order) so it starts at `toIndex`. Used to drag
+   * a multi-selection of cards to a new spot in one step.
+   */
+  const reorderPageBlock = useCallback(
+    (fromIndices: number[], toIndex: number) => {
+      mutate((draft) => {
+        const fromSet = new Set(fromIndices)
+        const block = fromIndices
+          .filter((i) => draft.pages[i] !== undefined)
+          .sort((a, b) => a - b)
+          .map((i) => draft.pages[i])
+        if (block.length === 0) return draft
+
+        const rest = draft.pages.filter((_, i) => !fromSet.has(i))
+        // Count how many moved pages originally sat before the target index,
+        // so removing them first doesn't shift where the block lands.
+        const removedBefore = fromIndices.filter((i) => i < toIndex).length
+        const insertAt = Math.max(0, Math.min(rest.length, toIndex - removedBefore))
+
+        const nextPages = [...rest.slice(0, insertAt), ...block, ...rest.slice(insertAt)]
+        return { pages: nextPages, annotations: draft.annotations }
+      })
+    },
+    [mutate],
+  )
+
   const undo = useCallback(() => {
     if (past.current.length === 0) return
     const prev = past.current.pop()!
@@ -149,6 +205,9 @@ export function usePdfEditorStore() {
     rotatePage,
     toggleDeletePage,
     reorderPages,
+    rotatePages,
+    deletePages,
+    reorderPageBlock,
     undo,
     redo,
     canUndo,

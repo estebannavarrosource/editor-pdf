@@ -111,7 +111,7 @@ No hay que configurar variables de entorno para el uso básico.
 │   │   ├── home-screen.tsx       # Pantalla de inicio
 │   │   ├── page-canvas.tsx       # Render y capa de anotación por página
 │   │   ├── editor-toolbar.tsx    # Barra de herramientas
-│   │   ├── thumbnail-sidebar.tsx # Panel de páginas (miniaturas)
+│   │   ├── page-organizer/       # Vista de pantalla completa "Organizar páginas"
 │   │   ├── annotation-*.tsx      # Vista y panel de propiedades de anotaciones
 │   │   ├── *-dialog.tsx          # Diálogos (exportar, firmar, OCR, nuevo PDF)
 │   │   └── ...

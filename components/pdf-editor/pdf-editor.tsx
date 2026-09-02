@@ -13,11 +13,22 @@ import { exportAsDocx, exportPagesAsImages } from "@/lib/pdf-export"
 import { readFormFields, toFormFieldValues, type FormFieldDescriptor } from "@/lib/pdf-form"
 import { filesToPdfBytes, appendFilesToPdf, ACCEPTED_IMPORT_TYPES, isSupportedImportFile } from "@/lib/pdf-import"
 import { buildSearchablePdf, documentNeedsOcr, type OcrPageResult } from "@/lib/pdf-ocr"
-import { insertBlankPage, duplicatePage, extractPagesPdf, createBlankPdf, type NewPdfOptions } from "@/lib/pdf-pages"
+import {
+  insertBlankPage,
+  duplicatePages,
+  extractPagesPdf,
+  insertFilesAtPosition,
+  replacePageWithFile,
+  toDisplayIndices,
+  createBlankPdf,
+  type NewPdfOptions,
+} from "@/lib/pdf-pages"
+import { splitBakedPdf, zipPdfParts } from "@/lib/pdf-split"
 import { saveSession, loadSession } from "@/lib/pdf-session"
 import { HomeScreen } from "./home-screen"
 import { EditorToolbar } from "./editor-toolbar"
 import { ToolsPanel } from "./tools-panel"
+import { PageOrganizerView } from "./page-organizer/page-organizer-view"
 import { PageScroller } from "./page-scroller"
 import { SignatureDialog } from "./signature-dialog"
 import { FormFillSheet } from "./form-fill-sheet"
@@ -48,7 +59,7 @@ export function PdfEditor() {
   const { search } = usePdfSearch(doc)
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [sidebarTab, setSidebarTab] = useState<"tools" | "pages">("tools")
+  const [pageOrganizerOpen, setPageOrganizerOpen] = useState(false)
   const [tool, setTool] = useState<ToolId>("select")
   const [color, setColor] = useState("#1d3fae")
   const [strokeWidth, setStrokeWidth] = useState(3)
@@ -336,49 +347,136 @@ export function PdfEditor() {
     [fileBytes, store.pages, store.annotations],
   )
 
-  const handleDuplicatePage = useCallback(
-    async (index: number) => {
+  const annotationsByPageMap = useMemo(() => {
+    const map = new Map<number, Annotation[]>()
+    for (const [key, value] of Object.entries(store.annotations)) {
+      map.set(Number(key), value)
+    }
+    return map
+  }, [store.annotations])
+
+  const handleDuplicatePages = useCallback(
+    async (indices: number[]) => {
       if (!fileBytes) return
       try {
-        const result = await duplicatePage(fileBytes.slice(0), store.pages, store.annotations, index)
+        const result = await duplicatePages(fileBytes.slice(0), store.pages, store.annotations, indices)
         pendingInitRef.current = { pages: result.pages, annotations: result.annotations }
         setFileBytes(toArrayBuffer(result.bytes))
         setVersion((v) => v + 1)
-        toast.success("Página duplicada")
+        toast.success(indices.length === 1 ? "Página duplicada" : `${indices.length} páginas duplicadas`)
       } catch (e) {
-        console.error("[v0] duplicate page failed", e)
-        toast.error("No se pudo duplicar la página")
+        console.error("[v0] duplicate pages failed", e)
+        toast.error("No se pudieron duplicar las páginas")
       }
     },
     [fileBytes, store.pages, store.annotations],
   )
 
-  const handleExtractPage = useCallback(
-    async (index: number) => {
+  const handleExtractPages = useCallback(
+    async (indices: number[]) => {
       if (!fileBytes) return
       try {
-        // Display index = count of visible pages before this one in the array.
-        let displayIndex = 0
-        for (let i = 0; i < index; i++) if (!store.pages[i].deleted) displayIndex++
-
-        const map = new Map<number, Annotation[]>()
-        for (const [key, value] of Object.entries(store.annotations)) map.set(Number(key), value)
+        const displayIndices = toDisplayIndices(store.pages, indices)
+        if (displayIndices.length === 0) return
 
         const baked = await buildExportedPdf({
           originalBytes: fileBytes.slice(0),
           pages: store.pages,
-          annotationsByPage: map,
+          annotationsByPage: annotationsByPageMap,
         })
-        const bytes = await extractPagesPdf(toArrayBuffer(baked), [displayIndex])
+        const bytes = await extractPagesPdf(toArrayBuffer(baked), displayIndices)
         const baseName = fileName?.replace(/\.pdf$/i, "") || "documento"
-        saveAs(new Blob([bytes], { type: "application/pdf" }), `${baseName}-pagina-${displayIndex + 1}.pdf`)
-        toast.success("Página extraída")
+        const suffix =
+          displayIndices.length === 1 ? `-pagina-${displayIndices[0] + 1}` : `-${displayIndices.length}-paginas`
+        saveAs(new Blob([bytes], { type: "application/pdf" }), `${baseName}${suffix}.pdf`)
+        toast.success(displayIndices.length === 1 ? "Página extraída" : "Páginas extraídas")
       } catch (e) {
-        console.error("[v0] extract page failed", e)
-        toast.error("No se pudo extraer la página")
+        console.error("[v0] extract pages failed", e)
+        toast.error("No se pudieron extraer las páginas")
       }
     },
-    [fileBytes, store.pages, store.annotations, fileName],
+    [fileBytes, store.pages, fileName, annotationsByPageMap],
+  )
+
+  const handleInsertFiles = useCallback(
+    async (files: File[], afterIndex: number | null) => {
+      if (!fileBytes) return
+      const valid = files.filter(isSupportedImportFile)
+      if (valid.length === 0) return
+      try {
+        const result = await insertFilesAtPosition(fileBytes.slice(0), store.pages, valid, afterIndex)
+        pendingInitRef.current = { pages: result.pages, annotations: store.annotations }
+        setFileBytes(toArrayBuffer(result.bytes))
+        setVersion((v) => v + 1)
+        toast.success(valid.length === 1 ? "Página insertada" : `${valid.length} páginas insertadas`)
+      } catch (e) {
+        console.error("[v0] insert files failed", e)
+        toast.error("No se pudieron insertar las páginas")
+      }
+    },
+    [fileBytes, store.pages, store.annotations],
+  )
+
+  const handleReplacePage = useCallback(
+    async (index: number, files: File[]) => {
+      if (!fileBytes) return
+      const valid = files.filter(isSupportedImportFile)
+      if (valid.length === 0) return
+      try {
+        const result = await replacePageWithFile(fileBytes.slice(0), store.pages, store.annotations, index, valid)
+        pendingInitRef.current = { pages: result.pages, annotations: result.annotations }
+        setFileBytes(toArrayBuffer(result.bytes))
+        setVersion((v) => v + 1)
+        toast.success("Página reemplazada")
+      } catch (e) {
+        console.error("[v0] replace page failed", e)
+        toast.error("No se pudo reemplazar la página")
+      }
+    },
+    [fileBytes, store.pages, store.annotations],
+  )
+
+  const handleSplitDocument = useCallback(
+    async (splitIndices: number[]) => {
+      if (!fileBytes) return
+      try {
+        const splitDisplayIndices = toDisplayIndices(store.pages, splitIndices)
+        const baked = await buildExportedPdf({
+          originalBytes: fileBytes.slice(0),
+          pages: store.pages,
+          annotationsByPage: annotationsByPageMap,
+        })
+        const parts = await splitBakedPdf(toArrayBuffer(baked), splitDisplayIndices)
+        if (parts.length < 2) {
+          toast.info("Selecciona páginas que no formen todo el documento para poder dividirlo")
+          return
+        }
+        const baseName = fileName?.replace(/\.pdf$/i, "") || "documento"
+        const zip = await zipPdfParts(parts, baseName)
+        saveAs(zip, `${baseName}-dividido.zip`)
+        toast.success(`Documento dividido en ${parts.length} partes`)
+      } catch (e) {
+        console.error("[v0] split document failed", e)
+        toast.error("No se pudo dividir el documento")
+      }
+    },
+    [fileBytes, store.pages, fileName, annotationsByPageMap],
+  )
+
+  const handleBulkRotate = useCallback(
+    (indices: number[], delta: 90 | -90) => {
+      const originalIndexes = indices.map((i) => store.pages[i]?.originalIndex).filter((i): i is number => i !== undefined)
+      store.rotatePages(originalIndexes, delta)
+    },
+    [store],
+  )
+
+  const handleBulkDelete = useCallback(
+    (indices: number[]) => {
+      const originalIndexes = indices.map((i) => store.pages[i]?.originalIndex).filter((i): i is number => i !== undefined)
+      store.deletePages(originalIndexes)
+    },
+    [store],
   )
 
   const computeCurrentPage = useCallback(() => {
@@ -520,14 +618,6 @@ export function PdfEditor() {
     setSearchOpen(false)
     setTool("select")
   }, [])
-
-  const annotationsByPageMap = useMemo(() => {
-    const map = new Map<number, Annotation[]>()
-    for (const [key, value] of Object.entries(store.annotations)) {
-      map.set(Number(key), value)
-    }
-    return map
-  }, [store.annotations])
 
   const handlePrint = useCallback(async () => {
     if (!fileBytes) return
@@ -728,12 +818,8 @@ export function PdfEditor() {
 
         {sidebarOpen && doc && (
           <ToolsPanel
-            doc={doc}
-            pages={store.pages}
             tool={tool}
             hasFormFields={formFields.length > 0}
-            activeTab={sidebarTab}
-            onActiveTabChange={setSidebarTab}
             onToolChange={setTool}
             onCreateNew={() => setNewPdfDialogOpen(true)}
             onOpenFile={() => fileInputRef.current?.click()}
@@ -742,13 +828,7 @@ export function PdfEditor() {
             onOpenForm={() => setFormSheetOpen(true)}
             onOpenExport={() => setExportDialogOpen(true)}
             onOpenOcr={() => setOcrDialogOpen(true)}
-            onJumpToPage={jumpToPage}
-            onRotate={store.rotatePage}
-            onToggleDelete={store.toggleDeletePage}
-            onReorder={store.reorderPages}
-            onInsertBlank={handleInsertBlank}
-            onDuplicate={handleDuplicatePage}
-            onExtract={handleExtractPage}
+            onOpenPageOrganizer={() => setPageOrganizerOpen(true)}
           />
         )}
 
@@ -826,6 +906,27 @@ export function PdfEditor() {
         currentPageIndex={currentPageIndex}
         onApplySearchable={handleApplySearchable}
       />
+
+      {pageOrganizerOpen && doc && (
+        <PageOrganizerView
+          doc={doc}
+          pages={store.pages}
+          canUndo={store.canUndo}
+          canRedo={store.canRedo}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          onClose={() => setPageOrganizerOpen(false)}
+          onRotate={handleBulkRotate}
+          onDelete={handleBulkDelete}
+          onReorderBlock={store.reorderPageBlock}
+          onDuplicate={handleDuplicatePages}
+          onInsertFiles={handleInsertFiles}
+          onInsertBlank={handleInsertBlank}
+          onReplace={handleReplacePage}
+          onExtract={handleExtractPages}
+          onSplit={handleSplitDocument}
+        />
+      )}
     </div>
   )
 }

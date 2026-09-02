@@ -63,13 +63,24 @@ async function addFilesToDoc(doc: PDFDocument, files: File[]): Promise<void> {
   }
 }
 
-/** Builds a fresh PDF from a mix of images and PDFs (used for the initial import). */
-export async function filesToPdfBytes(files: File[]): Promise<Uint8Array> {
+/**
+ * Builds a fresh in-memory PDFDocument from a mix of images and PDFs, without
+ * saving it to bytes yet. Exposed so callers that need to copy the resulting
+ * pages into another document (e.g. inserting/replacing pages) can do so
+ * directly, without a redundant save + reload round trip.
+ */
+export async function buildDocFromFiles(files: File[]): Promise<PDFDocument> {
   const doc = await PDFDocument.create()
   await addFilesToDoc(doc, files)
   if (doc.getPageCount() === 0) {
     throw new Error("No se encontraron páginas válidas para importar")
   }
+  return doc
+}
+
+/** Builds a fresh PDF from a mix of images and PDFs (used for the initial import). */
+export async function filesToPdfBytes(files: File[]): Promise<Uint8Array> {
+  const doc = await buildDocFromFiles(files)
   return doc.save()
 }
 

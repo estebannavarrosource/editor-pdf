@@ -8,9 +8,11 @@ import type { PageState } from "@/lib/pdf-types"
 interface PageThumbnailProps {
   doc: PdfjsDocument
   pageState: PageState
+  /** Rendered pixel width to scale the page to. Defaults to the size used by the tools sidebar list. */
+  targetWidth?: number
 }
 
-export function PageThumbnail({ doc, pageState }: PageThumbnailProps) {
+export function PageThumbnail({ doc, pageState, targetWidth = 132 }: PageThumbnailProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -20,7 +22,6 @@ export function PageThumbnail({ doc, pageState }: PageThumbnailProps) {
       if (cancelled) return
       const rotation = getTotalRotation(page, pageState.rotation)
       const baseViewport = page.getViewport({ scale: 1, rotation })
-      const targetWidth = 132
       const scale = targetWidth / baseViewport.width
       const viewport = page.getViewport({ scale, rotation })
       const canvas = canvasRef.current
@@ -35,7 +36,7 @@ export function PageThumbnail({ doc, pageState }: PageThumbnailProps) {
     return () => {
       cancelled = true
     }
-  }, [doc, pageState.originalIndex, pageState.rotation])
+  }, [doc, pageState.originalIndex, pageState.rotation, targetWidth])
 
   return <canvas ref={canvasRef} className="block w-full rounded-sm" />
 }
