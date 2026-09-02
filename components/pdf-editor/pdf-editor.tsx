@@ -15,7 +15,6 @@ import { filesToPdfBytes, appendFilesToPdf, ACCEPTED_IMPORT_TYPES, isSupportedIm
 import { buildSearchablePdf, documentNeedsOcr, type OcrPageResult } from "@/lib/pdf-ocr"
 import { insertBlankPage, duplicatePage, extractPagesPdf, createBlankPdf, type NewPdfOptions } from "@/lib/pdf-pages"
 import { saveSession, loadSession } from "@/lib/pdf-session"
-import { getPdfjs } from "@/lib/pdfjs"
 import { HomeScreen } from "./home-screen"
 import { EditorToolbar } from "./editor-toolbar"
 import { ToolsPanel } from "./tools-panel"
@@ -533,85 +532,66 @@ export function PdfEditor() {
   const handlePrint = useCallback(async () => {
     if (!fileBytes) return
 
-    // The editor preview can itself be embedded inside a cross-origin
-    // iframe (e.g. the v0 preview harness). In that case, calling
-    // window.print() on the current window - or printing via a same-page
-    // iframe/embed - makes the browser walk the frame ancestry and throws
-    // a SecurityError when it reaches the cross-origin parent. Opening a
-    // brand-new top-level window (a sibling browsing context, not nested
-    // inside that parent) sidesteps this entirely: printing happens there
-    // in complete isolation from the embedding page.
-    const printWindow = window.open("", "_blank")
-    if (!printWindow) {
-      toast.error("El navegador bloqueó la ventana de impresión. Permite las ventanas emergentes e inténtalo de nuevo.")
-      return
-    }
-    printWindow.document.write(
-      "<!DOCTYPE html><html><head><title>Imprimiendo...</title></head><body><p>Preparando documento para imprimir...</p></body></html>",
-    )
-
     try {
-      // Bake annotations and page changes into real PDF content, then
-      // rasterize each page so the print window only ever contains plain
-      // images - never the PDF or the editor UI.
+      // Bake annotations and page changes into real PDF content so what
+      // gets opened is the document itself, never the editor UI.
       const bytes = await buildExportedPdf({
         originalBytes: fileBytes.slice(0),
         pages: store.pages,
         annotationsByPage: annotationsByPageMap,
       })
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }))
 
-      const pdfjs = getPdfjs()
-      const printDoc = await pdfjs.getDocument({ data: bytes.slice() }).promise
+      // Open the PDF in a brand-new top-level tab (never an iframe inside
+      // this page) so the browser's native PDF viewer renders it. That
+      // viewer has its own print button/shortcut, which is the most
+      // reliable way to print a PDF: it avoids calling window.print()
+      // from our script entirely, side-stepping the SecurityError thrown
+      // when this app is itself embedded in a cross-origin iframe (the
+      // preview harness) and print() tries to walk up to a blocked
+      // window.top.
+      const printTab = window.open(url, "_blank", "noopener,noreferrer")
 
-      const imageUrls: string[] = []
-      for (let i = 1; i <= printDoc.numPages; i++) {
-        const page = await printDoc.getPage(i)
-        const viewport = page.getViewport({ scale: 2 })
-        const canvas = document.createElement("canvas")
-        canvas.width = viewport.width
-        canvas.height = viewport.height
-        const ctx = canvas.getContext("2d")
-        if (!ctx) continue
-        await page.render({ canvasContext: ctx, canvas, viewport }).promise
-        imageUrls.push(canvas.toDataURL("image/png"))
+      if (!printTab) {
+        toast.error("El navegador bloqueó la pestaña de impresión. Permite las ventanas emergentes e inténtalo de nuevo.")
+        URL.revokeObjectURL(url)
+        return
       }
 
-      if (printWindow.closed) return
+      toast.info("Se abrió el documento en una nueva pestaña. Usa el botón de imprimir del visor de PDF (o Ctrl/Cmd+P).")
 
-      const imagesHtml = imageUrls.map((src) => `<img src="${src}" alt="" />`).join("")
-
-      printWindow.document.open()
-      printWindow.document.write(`<!DOCTYPE html>
-<html>
-<head>
-<title>${fileName ?? "documento"}</title>
-<style>
-  html, body { margin: 0; padding: 0; }
-  img { display: block; width: 100%; page-break-after: always; }
-  img:last-child { page-break-after: auto; }
-</style>
-</head>
-<body>${imagesHtml}</body>
-</html>`)
-      printWindow.document.close()
-
-      let printed = false
-      const triggerPrint = () => {
-        if (printed || printWindow.closed) return
-        printed = true
-        printWindow.focus()
-        printWindow.print()
+      // Best-effort: try to trigger the print dialog automatically once
+      // the tab has loaded. This can throw a SecurityError in sandboxed
+      // preview environments, so failures here are silently ignored -
+      // the user can always print manually from the opened tab.
+      const tryAutoPrint = () => {
+        try {
+          printTab.focus()
+          printTab.print()
+        } catch {
+          // Ignore - manual printing from the opened tab still works.
+        }
       }
-      printWindow.onload = triggerPrint
-      // Some browsers don't reliably fire onload after document.write();
-      // fall back to triggering print shortly after.
-      setTimeout(triggerPrint, 300)
+      setTimeout(tryAutoPrint, 500)
+
+      // Clean up the object URL once the print tab is closed, polling
+      // since cross-origin/new-tab windows don't reliably fire events
+      // we can listen to from the opener.
+      const revokeCheck = setInterval(() => {
+        if (printTab.closed) {
+          URL.revokeObjectURL(url)
+          clearInterval(revokeCheck)
+        }
+      }, 1000)
+      setTimeout(() => {
+        URL.revokeObjectURL(url)
+        clearInterval(revokeCheck)
+      }, 10 * 60 * 1000)
     } catch (e) {
       console.error("[v0] print failed", e)
       toast.error("No se pudo preparar el documento para imprimir")
-      printWindow.close()
     }
-  }, [fileBytes, fileName, store.pages, annotationsByPageMap])
+  }, [fileBytes, store.pages, annotationsByPageMap])
 
   const handleFormFieldChange = useCallback((name: string, updated: FormFieldDescriptor) => {
     setFormFields((prev) => prev.map((f) => (f.name === name ? updated : f)))
