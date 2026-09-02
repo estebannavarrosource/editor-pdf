@@ -15,6 +15,7 @@ import { filesToPdfBytes, appendFilesToPdf, ACCEPTED_IMPORT_TYPES, isSupportedIm
 import { buildSearchablePdf, documentNeedsOcr, type OcrPageResult } from "@/lib/pdf-ocr"
 import { insertBlankPage, duplicatePage, extractPagesPdf, createBlankPdf, type NewPdfOptions } from "@/lib/pdf-pages"
 import { saveSession, loadSession } from "@/lib/pdf-session"
+import { getPdfjs } from "@/lib/pdfjs"
 import { HomeScreen } from "./home-screen"
 import { EditorToolbar } from "./editor-toolbar"
 import { ToolsPanel } from "./tools-panel"
@@ -531,70 +532,55 @@ export function PdfEditor() {
 
   const handlePrint = useCallback(async () => {
     if (!fileBytes) return
+    const printRootId = "pdf-print-root"
+    document.getElementById(printRootId)?.remove()
+
     try {
-      // Bake annotations and page changes into real PDF content so the
-      // print dialog receives the document itself, not the editor UI.
+      // Bake annotations and page changes into real PDF content, then
+      // rasterize each page in the current window (no iframe/embed, so
+      // there is never a cross-origin browsing context to worry about).
+      // A print-only container is toggled on via CSS @media print rules
+      // in globals.css, so the print dialog only ever sees the document.
       const bytes = await buildExportedPdf({
         originalBytes: fileBytes.slice(0),
         pages: store.pages,
         annotationsByPage: annotationsByPageMap,
       })
-      const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }))
 
-      const iframe = document.createElement("iframe")
-      iframe.style.position = "fixed"
-      iframe.style.inset = "0"
-      iframe.style.width = "0"
-      iframe.style.height = "0"
-      iframe.style.border = "none"
-      iframe.setAttribute("aria-hidden", "true")
+      const pdfjs = getPdfjs()
+      const printDoc = await pdfjs.getDocument({ data: bytes.slice() }).promise
+
+      const container = document.createElement("div")
+      container.id = printRootId
+
+      for (let i = 1; i <= printDoc.numPages; i++) {
+        const page = await printDoc.getPage(i)
+        const viewport = page.getViewport({ scale: 2 })
+        const canvas = document.createElement("canvas")
+        canvas.width = viewport.width
+        canvas.height = viewport.height
+        const ctx = canvas.getContext("2d")
+        if (!ctx) continue
+        await page.render({ canvasContext: ctx, canvas, viewport }).promise
+        const img = document.createElement("img")
+        img.src = canvas.toDataURL("image/png")
+        container.appendChild(img)
+      }
+
+      document.body.appendChild(container)
 
       const cleanup = () => {
-        URL.revokeObjectURL(url)
-        iframe.remove()
+        container.remove()
+        window.removeEventListener("afterprint", cleanup)
       }
-
-      // Navigating the iframe directly to a blob: URL puts it in a
-      // cross-origin browsing context in some browsers, which blocks
-      // access to its contentWindow. Using srcdoc keeps the iframe's
-      // document same-origin with the parent, while an <embed> inside
-      // it renders the PDF so printing from that window only includes
-      // the document, not the editor UI.
-      iframe.onload = () => {
-        const win = iframe.contentWindow
-        if (!win) {
-          cleanup()
-          toast.error("No se pudo preparar el documento para imprimir")
-          return
-        }
-        const embed = win.document.querySelector("embed")
-
-        let printed = false
-        const triggerPrint = () => {
-          if (printed) return
-          printed = true
-          win.addEventListener("afterprint", cleanup, { once: true })
-          win.focus()
-          win.print()
-          // Fallback cleanup in case the browser never fires afterprint.
-          setTimeout(cleanup, 60_000)
-        }
-
-        if (embed) {
-          embed.addEventListener("load", triggerPrint, { once: true })
-          // Some browsers never fire load on <embed>; fall back to a
-          // short delay so printing still happens.
-          setTimeout(triggerPrint, 500)
-        } else {
-          triggerPrint()
-        }
-      }
-
-      iframe.srcdoc = `<!DOCTYPE html><html><head><style>html,body{margin:0;height:100%}embed{width:100%;height:100%}</style></head><body><embed src="${url}" type="application/pdf" /></body></html>`
-      document.body.appendChild(iframe)
+      window.addEventListener("afterprint", cleanup)
+      window.print()
+      // Fallback cleanup in case the browser never fires afterprint.
+      setTimeout(cleanup, 60_000)
     } catch (e) {
       console.error("[v0] print failed", e)
       toast.error("No se pudo preparar el documento para imprimir")
+      document.getElementById(printRootId)?.remove()
     }
   }, [fileBytes, store.pages, annotationsByPageMap])
 

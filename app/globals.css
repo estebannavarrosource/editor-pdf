@@ -185,3 +185,27 @@
 .textLayer.pointer-events-none {
   pointer-events: none;
 }
+
+#pdf-print-root {
+  display: none;
+}
+
+@media print {
+  body > *:not(#pdf-print-root) {
+    display: none !important;
+  }
+
+  #pdf-print-root {
+    display: block !important;
+  }
+
+  #pdf-print-root img {
+    display: block;
+    width: 100%;
+    page-break-after: always;
+  }
+
+  #pdf-print-root img:last-child {
+    page-break-after: auto;
+  }
+}
