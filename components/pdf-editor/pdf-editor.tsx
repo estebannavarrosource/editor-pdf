@@ -521,10 +521,6 @@ export function PdfEditor() {
     setTool("select")
   }, [])
 
-  const handlePrint = useCallback(() => {
-    window.print()
-  }, [])
-
   const annotationsByPageMap = useMemo(() => {
     const map = new Map<number, Annotation[]>()
     for (const [key, value] of Object.entries(store.annotations)) {
@@ -532,6 +528,53 @@ export function PdfEditor() {
     }
     return map
   }, [store.annotations])
+
+  const handlePrint = useCallback(async () => {
+    if (!fileBytes) return
+    try {
+      // Bake annotations and page changes into real PDF content so the
+      // print dialog receives the document itself, not the editor UI.
+      const bytes = await buildExportedPdf({
+        originalBytes: fileBytes.slice(0),
+        pages: store.pages,
+        annotationsByPage: annotationsByPageMap,
+      })
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }))
+
+      const iframe = document.createElement("iframe")
+      iframe.style.position = "fixed"
+      iframe.style.inset = "0"
+      iframe.style.width = "0"
+      iframe.style.height = "0"
+      iframe.style.border = "none"
+      iframe.setAttribute("aria-hidden", "true")
+
+      const cleanup = () => {
+        URL.revokeObjectURL(url)
+        iframe.remove()
+      }
+
+      iframe.onload = () => {
+        const win = iframe.contentWindow
+        if (!win) {
+          cleanup()
+          toast.error("No se pudo preparar el documento para imprimir")
+          return
+        }
+        win.addEventListener("afterprint", cleanup, { once: true })
+        win.focus()
+        win.print()
+        // Fallback cleanup in case the browser never fires afterprint.
+        setTimeout(cleanup, 60_000)
+      }
+
+      iframe.src = url
+      document.body.appendChild(iframe)
+    } catch (e) {
+      console.error("[v0] print failed", e)
+      toast.error("No se pudo preparar el documento para imprimir")
+    }
+  }, [fileBytes, store.pages, annotationsByPageMap])
 
   const handleFormFieldChange = useCallback((name: string, updated: FormFieldDescriptor) => {
     setFormFields((prev) => prev.map((f) => (f.name === name ? updated : f)))
