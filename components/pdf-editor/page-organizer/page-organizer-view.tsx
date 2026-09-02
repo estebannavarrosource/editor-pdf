@@ -2,6 +2,7 @@
 
 import { type DragEvent, type MouseEvent, useCallback, useMemo, useRef, useState } from "react"
 import {
+  ChevronDown,
   Copy,
   Download,
   FilePlus,
@@ -42,6 +43,14 @@ interface PageOrganizerViewProps {
   onReplace: (index: number, files: File[]) => void
   onExtract: (indices: number[]) => void
   onSplit: (splitAtIndices: number[]) => void
+}
+
+/** Whether a page renders wider than tall, accounting for its current rotation. */
+function isLandscape(page: PageState): boolean {
+  const swapped = Math.abs(page.rotation % 180) === 90
+  const width = swapped ? page.height : page.width
+  const height = swapped ? page.width : page.height
+  return width > height
 }
 
 export function PageOrganizerView({
@@ -189,6 +198,31 @@ export function PageOrganizerView({
     clearSelection()
   }, [requireSelection, selectedList, onSplit, clearSelection])
 
+  /** Quick-select helper backing the count dropdown's "Páginas pares/impares/…" options. */
+  const selectByFilter = useCallback(
+    (filter: "even" | "odd" | "landscape" | "portrait" | "all") => {
+      const next = new Set<number>()
+      pages.forEach((page, index) => {
+        if (page.deleted) return
+        const pageNumber = index + 1
+        const matches =
+          filter === "all" ||
+          (filter === "even" && pageNumber % 2 === 0) ||
+          (filter === "odd" && pageNumber % 2 !== 0) ||
+          (filter === "landscape" && isLandscape(page)) ||
+          (filter === "portrait" && !isLandscape(page))
+        if (matches) next.add(index)
+      })
+      if (next.size === 0) {
+        toast.info("No hay páginas que coincidan con ese filtro")
+        return
+      }
+      setSelected(next)
+      setAnchor(null)
+    },
+    [pages],
+  )
+
   const openInsertPicker = useCallback(() => {
     pendingTargetRef.current = selectedList.length > 0 ? selectedList[selectedList.length - 1] : null
     insertInputRef.current?.click()
@@ -235,9 +269,54 @@ export function PageOrganizerView({
 
       <header className="flex items-center gap-1 border-b border-border px-4 py-2.5">
         <h1 className="mr-3 text-sm font-semibold text-foreground">Organizar páginas</h1>
-        <span className="mr-4 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
-          {selectedList.length > 0 ? `${selectedList.length} seleccionada(s)` : `${activeCount} página(s)`}
-        </span>
+
+        <Popover>
+          <PopoverTrigger
+            render={
+              <Button variant="ghost" size="sm" className="mr-4 gap-1.5 bg-muted px-2 text-xs text-muted-foreground">
+                {selectedList.length > 0 ? `${selectedList.length} seleccionada(s)` : `${activeCount} página(s)`}
+                <ChevronDown className="size-3.5" />
+              </Button>
+            }
+          />
+          <PopoverContent align="start" className="w-44 p-1">
+            <button
+              type="button"
+              onClick={() => selectByFilter("even")}
+              className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm text-foreground hover:bg-accent"
+            >
+              Páginas pares
+            </button>
+            <button
+              type="button"
+              onClick={() => selectByFilter("odd")}
+              className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm text-foreground hover:bg-accent"
+            >
+              Páginas impares
+            </button>
+            <button
+              type="button"
+              onClick={() => selectByFilter("landscape")}
+              className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm text-foreground hover:bg-accent"
+            >
+              Páginas horizontales
+            </button>
+            <button
+              type="button"
+              onClick={() => selectByFilter("portrait")}
+              className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm text-foreground hover:bg-accent"
+            >
+              Páginas verticales
+            </button>
+            <button
+              type="button"
+              onClick={() => selectByFilter("all")}
+              className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm text-foreground hover:bg-accent"
+            >
+              Todas las páginas
+            </button>
+          </PopoverContent>
+        </Popover>
 
         <Tooltip>
           <TooltipTrigger
