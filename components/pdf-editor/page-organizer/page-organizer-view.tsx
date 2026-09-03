@@ -74,7 +74,8 @@ export function PageOrganizerView({
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [anchor, setAnchor] = useState<number | null>(null)
   const [dragIndices, setDragIndices] = useState<number[] | null>(null)
-  const [overIndex, setOverIndex] = useState<number | null>(null)
+  // Insertion boundary the dragged pages will land at: 0..pages.length.
+  const [dropIndex, setDropIndex] = useState<number | null>(null)
 
   const insertInputRef = useRef<HTMLInputElement>(null)
   const replaceInputRef = useRef<HTMLInputElement>(null)
@@ -123,6 +124,8 @@ export function PageOrganizerView({
   const handleDragStart = useCallback(
     (index: number) => (e: DragEvent) => {
       e.dataTransfer.effectAllowed = "move"
+      // Firefox requires data to be set for the drag to initiate at all.
+      e.dataTransfer.setData("text/plain", String(index))
       const block = selected.has(index) ? selectedList : [index]
       setDragIndices(block)
     },
@@ -130,30 +133,25 @@ export function PageOrganizerView({
   )
 
   const handleDragOver = useCallback(
-    (index: number) => (e: DragEvent) => {
-      e.preventDefault()
-      setOverIndex(index)
+    (index: number, side: "left" | "right") => {
+      setDropIndex(side === "left" ? index : index + 1)
     },
     [],
   )
 
   const handleDragEnd = useCallback(() => {
     setDragIndices(null)
-    setOverIndex(null)
+    setDropIndex(null)
   }, [])
 
-  const handleDrop = useCallback(
-    (index: number) => (e: DragEvent) => {
-      e.preventDefault()
-      if (dragIndices && !dragIndices.includes(index)) {
-        onReorderBlock(dragIndices, index)
-        clearSelection()
-      }
-      setDragIndices(null)
-      setOverIndex(null)
-    },
-    [dragIndices, onReorderBlock, clearSelection],
-  )
+  const commitDrop = useCallback(() => {
+    if (dragIndices && dropIndex !== null) {
+      onReorderBlock(dragIndices, dropIndex)
+      clearSelection()
+    }
+    setDragIndices(null)
+    setDropIndex(null)
+  }, [dragIndices, dropIndex, onReorderBlock, clearSelection])
 
   const requireSelection = useCallback(() => {
     if (selectedList.length === 0) {
@@ -445,6 +443,14 @@ export function PageOrganizerView({
           onClick={(e) => {
             if (e.target === e.currentTarget) clearSelection()
           }}
+          onDragOver={(e) => {
+            // Allow dropping anywhere in the grid (e.g. the gap after the last card).
+            if (dragIndices) e.preventDefault()
+          }}
+          onDrop={(e) => {
+            e.preventDefault()
+            commitDrop()
+          }}
         >
           {pages.map((page, index) => (
             <PageOrganizerCard
@@ -453,7 +459,9 @@ export function PageOrganizerView({
               pageState={page}
               index={index}
               selected={selected.has(index)}
-              isDropTarget={overIndex === index && dragIndices !== null && !dragIndices.includes(index)}
+              isDragging={dragIndices?.includes(index) ?? false}
+              insertBefore={dropIndex === index && dragIndices !== null}
+              insertAfter={dropIndex === pages.length && index === pages.length - 1 && dragIndices !== null}
               onSelect={handleSelect}
               onRotate={(delta) => onRotate([index], delta)}
               onToggleDelete={() => onDelete([index])}
@@ -465,9 +473,12 @@ export function PageOrganizerView({
               }}
               onExtract={() => onExtract([index])}
               onDragStart={handleDragStart(index)}
-              onDragOver={handleDragOver(index)}
+              onDragOver={handleDragOver}
               onDragEnd={handleDragEnd}
-              onDrop={handleDrop(index)}
+              onDrop={(e) => {
+                e.preventDefault()
+                commitDrop()
+              }}
             />
           ))}
         </div>

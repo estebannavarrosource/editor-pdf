@@ -15,7 +15,9 @@ interface PageOrganizerCardProps {
   pageState: PageState
   index: number
   selected: boolean
-  isDropTarget: boolean
+  isDragging: boolean
+  insertBefore: boolean
+  insertAfter: boolean
   onSelect: (index: number, e: MouseEvent) => void
   onRotate: (delta: 90 | -90) => void
   onToggleDelete: () => void
@@ -24,7 +26,7 @@ interface PageOrganizerCardProps {
   onReplace: () => void
   onExtract: () => void
   onDragStart: (e: DragEvent) => void
-  onDragOver: (e: DragEvent) => void
+  onDragOver: (index: number, side: "left" | "right") => void
   onDragEnd: (e: DragEvent) => void
   onDrop: (e: DragEvent) => void
 }
@@ -34,7 +36,9 @@ export function PageOrganizerCard({
   pageState,
   index,
   selected,
-  isDropTarget,
+  isDragging,
+  insertBefore,
+  insertAfter,
   onSelect,
   onRotate,
   onToggleDelete,
@@ -47,18 +51,39 @@ export function PageOrganizerCard({
   onDragEnd,
   onDrop,
 }: PageOrganizerCardProps) {
+  const handleDragOver = (e: DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "move"
+    const rect = e.currentTarget.getBoundingClientRect()
+    const side = e.clientX < rect.left + rect.width / 2 ? "left" : "right"
+    onDragOver(index, side)
+  }
+
   return (
     <div
       draggable
       onDragStart={onDragStart}
-      onDragOver={onDragOver}
+      onDragOver={handleDragOver}
       onDragEnd={onDragEnd}
       onDrop={onDrop}
       className={cn(
-        "group relative rounded-lg border-2 border-transparent p-1 transition-colors",
-        isDropTarget && "border-primary bg-primary/5",
+        "group relative cursor-grab rounded-lg p-1 transition-opacity active:cursor-grabbing",
+        isDragging && "opacity-40",
       )}
     >
+      {/* Insertion indicator lines shown while dragging pages to a new spot. */}
+      {insertBefore && (
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-2 -left-3 w-1 rounded-full bg-primary"
+        />
+      )}
+      {insertAfter && (
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-2 -right-3 w-1 rounded-full bg-primary"
+        />
+      )}
       <button
         type="button"
         onClick={(e) => onSelect(index, e)}
