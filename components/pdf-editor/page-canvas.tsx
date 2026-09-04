@@ -46,6 +46,7 @@ interface PageCanvasProps {
   onUpdateAnnotation: (id: string, patch: Partial<Annotation>) => void
   onRemoveAnnotation: (id: string) => void
   onRequestSignaturePlacement: () => void
+  onRequestOpenComments: (id: string) => void
   registerContainer: (originalIndex: number, el: HTMLDivElement | null) => void
 }
 
@@ -68,6 +69,7 @@ export function PageCanvas({
   onUpdateAnnotation,
   onRemoveAnnotation,
   onRequestSignaturePlacement,
+  onRequestOpenComments,
   registerContainer,
 }: PageCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -251,6 +253,24 @@ export function PageCanvas({
         return
       }
 
+      if (tool === "comment") {
+        const id = makeId("cmt")
+        onAddAnnotation({
+          id,
+          pageIndex: pageState.originalIndex,
+          color: "#d97706",
+          createdAt: Date.now(),
+          type: "comment",
+          x: pdfPt.x,
+          y: pdfPt.y,
+          messages: [],
+          resolved: false,
+        })
+        onSelectAnnotation(id)
+        onRequestOpenComments(id)
+        return
+      }
+
       if (tool === "sign") {
         if (!activeSignature) {
           onRequestSignaturePlacement()
@@ -272,7 +292,7 @@ export function PageCanvas({
         })
       }
     },
-    [tool, color, fontSize, pageState.originalIndex, activeSignature, getLocalPoint, onAddAnnotation, onSelectAnnotation, onRequestSignaturePlacement],
+    [tool, color, fontSize, pageState.originalIndex, activeSignature, getLocalPoint, onAddAnnotation, onSelectAnnotation, onRequestSignaturePlacement, onRequestOpenComments],
   )
 
   const handleOverlayPointerMove = useCallback(
@@ -374,11 +394,15 @@ export function PageCanvas({
     (annotation: Annotation) => {
       if (tool === "eraser") {
         onRemoveAnnotation(annotation.id)
+      } else if (annotation.type === "comment") {
+        // Comment markers open their thread regardless of the active tool.
+        onSelectAnnotation(annotation.id)
+        onRequestOpenComments(annotation.id)
       } else if (tool === "select") {
         onSelectAnnotation(annotation.id)
       }
     },
-    [tool, onSelectAnnotation, onRemoveAnnotation],
+    [tool, onSelectAnnotation, onRemoveAnnotation, onRequestOpenComments],
   )
 
   const handleResizeStart = useCallback(

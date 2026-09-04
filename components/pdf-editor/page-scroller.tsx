@@ -23,6 +23,7 @@ interface PageScrollerProps {
   onUpdateAnnotation: (originalIndex: number, id: string, patch: Partial<Annotation>) => void
   onRemoveAnnotation: (originalIndex: number, id: string) => void
   onRequestSignaturePlacement: () => void
+  onRequestOpenComments: (id: string) => void
   registerScrollContainer: (el: HTMLDivElement | null) => void
   registerPageContainer: (originalIndex: number, el: HTMLDivElement | null) => void
 }
@@ -45,6 +46,7 @@ export function PageScroller({
   onUpdateAnnotation,
   onRemoveAnnotation,
   onRequestSignaturePlacement,
+  onRequestOpenComments,
   registerScrollContainer,
   registerPageContainer,
 }: PageScrollerProps) {
@@ -87,6 +89,7 @@ export function PageScroller({
               onUpdateAnnotation={(id, patch) => onUpdateAnnotation(pageState.originalIndex, id, patch)}
               onRemoveAnnotation={(id) => onRemoveAnnotation(pageState.originalIndex, id)}
               onRequestSignaturePlacement={onRequestSignaturePlacement}
+              onRequestOpenComments={onRequestOpenComments}
               registerContainer={registerPageContainer}
             />
           )

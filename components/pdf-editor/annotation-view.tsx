@@ -254,6 +254,35 @@ export function AnnotationView({
         </div>
       )
     }
+    case "comment": {
+      // Anchor the marker's bottom-left tip at the comment point. Markers are
+      // always clickable (regardless of the active tool) so users can open the
+      // thread anytime, like Word's comment pins.
+      const pt = toViewportPoint(viewport, annotation.x, annotation.y)
+      const count = annotation.messages.length
+      return (
+        <button
+          type="button"
+          aria-label={`Comentario${count > 0 ? ` con ${count} mensaje(s)` : ""}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            onClickAny?.(annotation)
+          }}
+          className={cn(
+            "absolute flex size-6 items-center justify-center rounded-full rounded-bl-none border shadow-sm transition-transform hover:scale-110",
+            annotation.resolved
+              ? "border-border bg-muted text-muted-foreground"
+              : "border-comment-ring bg-comment text-comment-foreground",
+            selected && "ring-2 ring-primary ring-offset-1",
+          )}
+          style={{ left: pt.x, top: pt.y - 24, pointerEvents: "auto" }}
+        >
+          <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
+      )
+    }
     default:
       return null
   }

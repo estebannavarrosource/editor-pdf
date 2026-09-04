@@ -7,7 +7,8 @@ import { usePdfDocument } from "@/hooks/use-pdf-document"
 import { usePdfEditorStore } from "@/hooks/use-pdf-editor-store"
 import { usePdfSearch, type DocumentMatch } from "@/hooks/use-pdf-search"
 import type { SearchOptions } from "@/lib/pdf-search"
-import type { Annotation, PageState, ToolId } from "@/lib/pdf-types"
+import type { Annotation, CommentAnnotation, PageState, ToolId } from "@/lib/pdf-types"
+import { makeId } from "@/lib/id"
 import { buildExportedPdf } from "@/lib/pdf-engine"
 import { exportAsDocx, exportPagesAsImages } from "@/lib/pdf-export"
 import { readFormFields, toFormFieldValues, type FormFieldDescriptor } from "@/lib/pdf-form"
@@ -36,6 +37,7 @@ import { ExportDialog, type ExportFormat } from "./export-dialog"
 import { OcrProgressOverlay } from "./ocr-progress-overlay"
 import { NewPdfDialog } from "./new-pdf-dialog"
 import { SearchBar } from "./search-bar"
+import { CommentsPanel, type CommentThread } from "./comments-panel"
 import { AnnotationProperties } from "./annotation-properties"
 import type { PageSearchMatch } from "./page-canvas"
 import { Spinner } from "@/components/ui/spinner"
@@ -77,6 +79,17 @@ export function PdfEditor() {
   const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null)
   const [newPdfDialogOpen, setNewPdfDialogOpen] = useState(false)
   const [currentPageIndex, setCurrentPageIndex] = useState(0)
+  const [commentsOpen, setCommentsOpen] = useState(false)
+  const [commentDraftId, setCommentDraftId] = useState<string | null>(null)
+  const [commentAuthor, setCommentAuthor] = useState(() => {
+    if (typeof window === "undefined") return "Yo"
+    return window.localStorage.getItem("pdf-comment-author") || "Yo"
+  })
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("pdf-comment-author", commentAuthor.trim() || "Yo")
+    }
+  }, [commentAuthor])
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [searchOptions, setSearchOptions] = useState<SearchOptions>({
@@ -596,6 +609,97 @@ export function PdfEditor() {
     [store],
   )
 
+  // ---- Comments (Word-style review notes) ----------------------------------
+  // Ordered top-to-bottom within each page, pages in display order.
+  const commentThreads = useMemo<CommentThread[]>(() => {
+    const list: CommentThread[] = []
+    for (const [key, anns] of Object.entries(store.annotations)) {
+      const pageIndex = Number(key)
+      const displayNumber = pageOrder.indexOf(pageIndex) + 1
+      for (const ann of anns) {
+        if (ann.type === "comment") {
+          list.push({ annotation: ann as CommentAnnotation, pageIndex, displayNumber })
+        }
+      }
+    }
+    return list.sort((a, b) => {
+      if (a.displayNumber !== b.displayNumber) return a.displayNumber - b.displayNumber
+      // Higher PDF y = closer to the top of the page.
+      return b.annotation.y - a.annotation.y
+    })
+  }, [store.annotations, pageOrder])
+
+  // Discard comment markers that were placed but never got a message, keeping
+  // an optional in-progress draft. Mirrors Word discarding empty comments.
+  const purgeEmptyComments = useCallback(
+    (keepId?: string) => {
+      for (const [key, anns] of Object.entries(store.annotations)) {
+        const originalIndex = Number(key)
+        for (const ann of anns) {
+          if (ann.type === "comment" && ann.messages.length === 0 && ann.id !== keepId) {
+            store.removeAnnotation(originalIndex, ann.id)
+          }
+        }
+      }
+    },
+    [store],
+  )
+
+  const handleOpenComments = useCallback(
+    (id: string) => {
+      purgeEmptyComments(id)
+      setCommentsOpen(true)
+      setCommentDraftId(id)
+      setSelectedId(id)
+    },
+    [purgeEmptyComments],
+  )
+
+  const handleSelectThread = useCallback(
+    (thread: CommentThread) => {
+      purgeEmptyComments(thread.annotation.id)
+      setSelectedId(thread.annotation.id)
+      setCommentDraftId(null)
+      jumpToPage(thread.pageIndex)
+    },
+    [jumpToPage, purgeEmptyComments],
+  )
+
+  const handleAddCommentMessage = useCallback(
+    (originalIndex: number, id: string, text: string) => {
+      const current = (store.annotations[originalIndex] ?? []).find((a) => a.id === id) as
+        | CommentAnnotation
+        | undefined
+      if (!current) return
+      const message = { id: makeId("msg"), author: commentAuthor.trim() || "Yo", text, createdAt: Date.now() }
+      store.updateAnnotation(originalIndex, id, {
+        messages: [...current.messages, message],
+      } as Partial<Annotation>)
+      setCommentDraftId(null)
+    },
+    [store, commentAuthor],
+  )
+
+  const handleToggleCommentResolved = useCallback(
+    (originalIndex: number, id: string) => {
+      const current = (store.annotations[originalIndex] ?? []).find((a) => a.id === id) as
+        | CommentAnnotation
+        | undefined
+      if (!current) return
+      store.updateAnnotation(originalIndex, id, { resolved: !current.resolved } as Partial<Annotation>)
+    },
+    [store],
+  )
+
+  const handleDeleteComment = useCallback(
+    (originalIndex: number, id: string) => {
+      store.removeAnnotation(originalIndex, id)
+      setSelectedId((cur) => (cur === id ? null : cur))
+      setCommentDraftId((cur) => (cur === id ? null : cur))
+    },
+    [store],
+  )
+
   const handleUndo = useCallback(() => {
     store.undo()
   }, [store])
@@ -818,6 +922,15 @@ export function PdfEditor() {
         onZoomOut={zoomOut}
         onOpenSearch={openSearch}
         onOpenExport={() => setExportDialogOpen(true)}
+        commentsActive={commentsOpen}
+        commentCount={commentThreads.length}
+        onToggleComments={() => {
+          setCommentsOpen((v) => {
+            if (v) purgeEmptyComments()
+            return !v
+          })
+          setCommentDraftId(null)
+        }}
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
         onGoHome={handleGoHome}
         onQuickSave={() => handleExport("pdf")}
@@ -887,7 +1000,7 @@ export function PdfEditor() {
           />
         )}
 
-        {selectedAnnotation && tool === "select" && (
+        {selectedAnnotation && selectedAnnotation.annotation.type !== "comment" && tool === "select" && (
           <AnnotationProperties
             annotation={selectedAnnotation.annotation}
             onUpdate={(patch) =>
@@ -929,8 +1042,28 @@ export function PdfEditor() {
             onUpdateAnnotation={handleUpdateAnnotation}
             onRemoveAnnotation={handleRemoveAnnotation}
             onRequestSignaturePlacement={() => setSignatureDialogOpen(true)}
+            onRequestOpenComments={handleOpenComments}
             registerScrollContainer={registerScrollContainer}
             registerPageContainer={registerPageContainer}
+          />
+        )}
+
+        {commentsOpen && doc && (
+          <CommentsPanel
+            threads={commentThreads}
+            author={commentAuthor}
+            onAuthorChange={setCommentAuthor}
+            selectedId={selectedId}
+            draftId={commentDraftId}
+            onSelect={handleSelectThread}
+            onAddMessage={handleAddCommentMessage}
+            onToggleResolved={handleToggleCommentResolved}
+            onDelete={handleDeleteComment}
+            onClose={() => {
+              purgeEmptyComments()
+              setCommentsOpen(false)
+              setCommentDraftId(null)
+            }}
           />
         )}
       </div>

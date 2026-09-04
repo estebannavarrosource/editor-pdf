@@ -11,6 +11,8 @@ import {
   ChevronDown,
   MousePointer2,
   Hand,
+  MessageSquare,
+  MessageSquarePlus,
   ZoomIn,
   ZoomOut,
   Undo2,
@@ -42,6 +44,7 @@ const TOOL_LABELS: Record<ToolId, string> = {
   arrow: "Flecha",
   text: "Texto",
   sign: "Firma",
+  comment: "Comentario",
   eraser: "Borrador",
 }
 
@@ -64,6 +67,9 @@ interface EditorToolbarProps {
   onZoomOut: () => void
   onOpenSearch: () => void
   onOpenExport: () => void
+  commentsActive: boolean
+  commentCount: number
+  onToggleComments: () => void
   onToggleSidebar: () => void
   onGoHome: () => void
   onQuickSave: () => void
@@ -94,6 +100,9 @@ export function EditorToolbar({
   onZoomOut,
   onOpenSearch,
   onOpenExport,
+  commentsActive,
+  commentCount,
+  onToggleComments,
   onToggleSidebar,
   onGoHome,
   onQuickSave,
@@ -105,7 +114,7 @@ export function EditorToolbar({
   onJumpToPageNumber,
 }: EditorToolbarProps) {
   const [pageInput, setPageInput] = useState(String(currentPage))
-  const showColorAndWidth = tool !== "select" && tool !== "pan" && tool !== "eraser"
+  const showColorAndWidth = tool !== "select" && tool !== "pan" && tool !== "eraser" && tool !== "comment"
   const showFill = ["rectangle", "ellipse"].includes(tool)
   const showContextualBar = showColorAndWidth
 
@@ -185,6 +194,28 @@ export function EditorToolbar({
           />
           <TooltipContent>Buscar (Ctrl+F)</TooltipContent>
         </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant={commentsActive ? "default" : "ghost"}
+                size="icon"
+                onClick={onToggleComments}
+                aria-label="Panel de comentarios"
+                aria-pressed={commentsActive}
+                className="relative"
+              >
+                <MessageSquare />
+                {commentCount > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-comment px-1 text-[10px] font-semibold text-comment-foreground">
+                    {commentCount}
+                  </span>
+                )}
+              </Button>
+            }
+          />
+          <TooltipContent>Comentarios</TooltipContent>
+        </Tooltip>
 
         <div className="mx-auto flex items-center gap-1">
           <Tooltip>
@@ -261,6 +292,22 @@ export function EditorToolbar({
             }
           />
           <TooltipContent>Mover vista</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant={tool === "comment" ? "default" : "ghost"}
+                size="icon"
+                onClick={() => onToolChange("comment")}
+                aria-label="Añadir comentario"
+                aria-pressed={tool === "comment"}
+              >
+                <MessageSquarePlus />
+              </Button>
+            }
+          />
+          <TooltipContent>Comentar (clic en el documento)</TooltipContent>
         </Tooltip>
 
         <Separator orientation="vertical" className="h-7" />

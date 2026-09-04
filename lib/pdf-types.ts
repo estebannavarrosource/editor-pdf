@@ -11,6 +11,7 @@ export type ToolId =
   | "line"
   | "text"
   | "sign"
+  | "comment"
   | "eraser"
 
 export interface RectSelection {
@@ -78,12 +79,35 @@ export interface SignatureAnnotation extends BaseAnnotation {
   dataUrl: string
 }
 
+/** A single message inside a comment thread (the initial note or a reply). */
+export interface CommentMessage {
+  id: string
+  author: string
+  text: string
+  createdAt: number
+}
+
+/**
+ * A Word-style review comment anchored to a point on the page. Renders a
+ * marker on the canvas and a threaded conversation in the comments panel.
+ * It is review metadata, so it is intentionally NOT baked into exported PDFs.
+ */
+export interface CommentAnnotation extends BaseAnnotation {
+  type: "comment"
+  /** Anchor point in PDF user-space (bottom-left origin) */
+  x: number
+  y: number
+  messages: CommentMessage[]
+  resolved: boolean
+}
+
 export type Annotation =
   | HighlightAnnotation
   | InkAnnotation
   | ShapeAnnotation
   | TextBoxAnnotation
   | SignatureAnnotation
+  | CommentAnnotation
 
 export interface PageState {
   /** Original index in the source document (stable identity) */

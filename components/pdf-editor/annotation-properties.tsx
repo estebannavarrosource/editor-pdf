@@ -26,6 +26,7 @@ const TYPE_LABELS: Record<Annotation["type"], string> = {
   arrow: "Flecha",
   text: "Texto",
   sign: "Firma",
+  comment: "Comentario",
 }
 
 export function AnnotationProperties({ annotation, onUpdate, onRemove, onClose }: AnnotationPropertiesProps) {
