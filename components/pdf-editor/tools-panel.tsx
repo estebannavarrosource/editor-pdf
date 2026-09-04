@@ -103,7 +103,7 @@ const CATEGORIES: ToolCategory[] = [
   {
     label: "Reconocimiento",
     accent: "text-emerald-600",
-    items: [{ id: "ocr", icon: ScanText, label: "Digitalización y OCR", action: "ocr" }],
+    items: [{ id: "ocr", icon: ScanText, label: "Reconocer texto (OCR)", action: "ocr" }],
   },
 ]
 
@@ -117,7 +117,7 @@ interface ToolsPanelProps {
   onOpenSignature: () => void
   onOpenForm: () => void
   onOpenExport: () => void
-  onOpenOcr: () => void
+  onRunOcr: () => void
   onOpenPageOrganizer: () => void
 }
 
@@ -131,7 +131,7 @@ export function ToolsPanel({
   onOpenSignature,
   onOpenForm,
   onOpenExport,
-  onOpenOcr,
+  onRunOcr,
   onOpenPageOrganizer,
 }: ToolsPanelProps) {
   const [query, setQuery] = useState("")
@@ -160,7 +160,7 @@ export function ToolsPanel({
         onOpenExport()
         break
       case "ocr":
-        onOpenOcr()
+        onRunOcr()
         break
     }
   }

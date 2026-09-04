@@ -25,24 +25,47 @@ export function usePdfSearch(doc: PdfjsDocument | null) {
     cacheRef.current = new Map()
   }, [doc])
 
+  /** Extract (and cache) the text layer for a single page. */
+  const ensurePageText = useCallback(
+    async (pageIndex: number): Promise<PageText | null> => {
+      if (!doc) return null
+      const cache = cacheRef.current
+      const cached = cache.get(pageIndex)
+      if (cached) return cached
+      try {
+        const page = await doc.getPage(pageIndex + 1)
+        const pageText = await extractPageText(page)
+        cache.set(pageIndex, pageText)
+        return pageText
+      } catch (e) {
+        console.error("[v0] search extract failed", e)
+        return null
+      }
+    },
+    [doc],
+  )
+
+  /**
+   * Pre-extracts and caches the text layer for every page so the first real
+   * search returns instantly. Called after OCR embeds a fresh text layer.
+   */
+  const prewarm = useCallback(
+    async (pageOrder: number[]): Promise<void> => {
+      for (const pageIndex of pageOrder) {
+        await ensurePageText(pageIndex)
+      }
+    },
+    [ensurePageText],
+  )
+
   const search = useCallback(
     async (query: string, options: SearchOptions, pageOrder: number[]): Promise<DocumentMatch[]> => {
       if (!doc || query.trim().length === 0) return []
-      const cache = cacheRef.current
       const results: DocumentMatch[] = []
 
       for (const pageIndex of pageOrder) {
-        let pageText = cache.get(pageIndex)
-        if (!pageText) {
-          try {
-            const page = await doc.getPage(pageIndex + 1)
-            pageText = await extractPageText(page)
-            cache.set(pageIndex, pageText)
-          } catch (e) {
-            console.error("[v0] search extract failed", e)
-            continue
-          }
-        }
+        const pageText = await ensurePageText(pageIndex)
+        if (!pageText) continue
         const matches = findMatchesInPage(pageText, query, options)
         for (const m of matches) {
           results.push({ pageIndex, rects: m.rects, snippet: m.snippet })
@@ -51,8 +74,8 @@ export function usePdfSearch(doc: PdfjsDocument | null) {
 
       return results
     },
-    [doc],
+    [doc, ensurePageText],
   )
 
-  return { search }
+  return { search, prewarm }
 }

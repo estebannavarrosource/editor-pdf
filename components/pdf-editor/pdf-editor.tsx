@@ -12,7 +12,7 @@ import { buildExportedPdf } from "@/lib/pdf-engine"
 import { exportAsDocx, exportPagesAsImages } from "@/lib/pdf-export"
 import { readFormFields, toFormFieldValues, type FormFieldDescriptor } from "@/lib/pdf-form"
 import { filesToPdfBytes, appendFilesToPdf, ACCEPTED_IMPORT_TYPES, isSupportedImportFile } from "@/lib/pdf-import"
-import { buildSearchablePdf, documentNeedsOcr, type OcrPageResult } from "@/lib/pdf-ocr"
+import { runOcr, buildSearchablePdf, documentNeedsOcr, pageNeedsOcr, type OcrProgress } from "@/lib/pdf-ocr"
 import {
   insertBlankPage,
   duplicatePages,
@@ -33,7 +33,7 @@ import { PageScroller } from "./page-scroller"
 import { SignatureDialog } from "./signature-dialog"
 import { FormFillSheet } from "./form-fill-sheet"
 import { ExportDialog, type ExportFormat } from "./export-dialog"
-import { OcrDialog } from "./ocr-dialog"
+import { OcrProgressOverlay } from "./ocr-progress-overlay"
 import { NewPdfDialog } from "./new-pdf-dialog"
 import { SearchBar } from "./search-bar"
 import { AnnotationProperties } from "./annotation-properties"
@@ -56,7 +56,7 @@ export function PdfEditor() {
 
   const { doc, pages: docPages, loading, error } = usePdfDocument(fileBytes, version)
   const store = usePdfEditorStore()
-  const { search } = usePdfSearch(doc)
+  const { search, prewarm } = usePdfSearch(doc)
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [pageOrganizerOpen, setPageOrganizerOpen] = useState(false)
@@ -73,7 +73,8 @@ export function PdfEditor() {
   const [formSheetOpen, setFormSheetOpen] = useState(false)
   const [formFields, setFormFields] = useState<FormFieldDescriptor[]>([])
   const [exporting, setExporting] = useState(false)
-  const [ocrDialogOpen, setOcrDialogOpen] = useState(false)
+  const [ocrRunning, setOcrRunning] = useState(false)
+  const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null)
   const [newPdfDialogOpen, setNewPdfDialogOpen] = useState(false)
   const [currentPageIndex, setCurrentPageIndex] = useState(0)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -92,6 +93,9 @@ export function PdfEditor() {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const pageContainerRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const ocrSuggestedRef = useRef(false)
+  // Set right before an OCR-produced reload; tells the effect below to index
+  // the freshly embedded text layer once the new document instance is ready.
+  const pendingOcrPrewarmRef = useRef(false)
   // When set, the next document load restores this exact page/annotation state
   // instead of a fresh reset. Used by session restore and page operations.
   const pendingInitRef = useRef<{ pages: PageState[]; annotations: Record<number, Annotation[]> } | null>(null)
@@ -155,14 +159,15 @@ export function PdfEditor() {
     documentNeedsOcr(doc).then((needs) => {
       if (cancelled || !needs) return
       ocrSuggestedRef.current = true
-      toast.info("Este documento parece escaneado. Usa OCR para reconocer su texto.", {
-        action: { label: "Aplicar OCR", onClick: () => setOcrDialogOpen(true) },
+      toast.info("Este documento parece escaneado. Reconoce su texto para poder buscarlo y seleccionarlo.", {
+        action: { label: "Reconocer texto", onClick: () => void handleRunOcr() },
         duration: 8000,
       })
     })
     return () => {
       cancelled = true
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc])
 
   // Visible pages in display order, used to order and scope search results.
@@ -171,6 +176,26 @@ export function PdfEditor() {
     [store.pages],
   )
   const pageOrderKey = pageOrder.join(",")
+
+  // After an OCR pass reloads the document, index every page's new text layer
+  // in the background so the first search is instant, then invite the user to search.
+  useEffect(() => {
+    if (!doc || !pendingOcrPrewarmRef.current) return
+    pendingOcrPrewarmRef.current = false
+    let cancelled = false
+    void (async () => {
+      await prewarm(pageOrder)
+      if (cancelled) return
+      toast.success("Texto reconocido. El documento ya es buscable y seleccionable.", {
+        action: { label: "Buscar", onClick: () => setSearchOpen(true) },
+        duration: 8000,
+      })
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc, pageOrderKey])
 
   // Run the search (debounced) whenever the query, options, document, or page order change.
   useEffect(() => {
@@ -319,16 +344,46 @@ export function PdfEditor() {
     [fileBytes],
   )
 
-  const handleApplySearchable = useCallback(
-    async (results: OcrPageResult[]) => {
-      if (!fileBytes) return
+  // One-click OCR: recognizes text and embeds it directly into the document,
+  // making it selectable/searchable without any intermediate dialog.
+  const handleRunOcr = useCallback(async () => {
+    if (!doc || !fileBytes || ocrRunning) return
+    setOcrRunning(true)
+    setOcrProgress(null)
+    ocrSuggestedRef.current = true
+    try {
+      const active = store.pages.filter((p) => !p.deleted)
+      // Only OCR pages that lack extractable text: pages that are already
+      // digital keep their original perfect text and avoid a redundant layer.
+      const targets: PageState[] = []
+      for (const p of active) {
+        if (await pageNeedsOcr(doc, p.originalIndex)) targets.push(p)
+      }
+
+      if (targets.length === 0) {
+        await prewarm(pageOrder)
+        toast.info("El documento ya tiene texto buscable y seleccionable.", {
+          action: { label: "Buscar", onClick: () => setSearchOpen(true) },
+          duration: 6000,
+        })
+        return
+      }
+
+      const results = await runOcr(doc, targets, (p) => setOcrProgress(p))
       const bytes = await buildSearchablePdf(fileBytes.slice(0), results)
+      // Preserve current pages/annotations across the reload, then index the new text.
+      pendingInitRef.current = { pages: store.pages, annotations: store.annotations }
+      pendingOcrPrewarmRef.current = true
       setFileBytes(toArrayBuffer(bytes))
       setVersion((v) => v + 1)
-      toast.success("PDF con texto buscable creado")
-    },
-    [fileBytes],
-  )
+    } catch (e) {
+      console.error("[v0] OCR failed", e)
+      toast.error("No se pudo reconocer el texto del documento")
+    } finally {
+      setOcrRunning(false)
+      setOcrProgress(null)
+    }
+  }, [doc, fileBytes, ocrRunning, store.pages, store.annotations, pageOrder, prewarm])
 
   const handleInsertBlank = useCallback(
     async (afterIndex: number | null) => {
@@ -827,7 +882,7 @@ export function PdfEditor() {
             onOpenSignature={() => setSignatureDialogOpen(true)}
             onOpenForm={() => setFormSheetOpen(true)}
             onOpenExport={() => setExportDialogOpen(true)}
-            onOpenOcr={() => setOcrDialogOpen(true)}
+            onRunOcr={handleRunOcr}
             onOpenPageOrganizer={() => setPageOrganizerOpen(true)}
           />
         )}
@@ -898,14 +953,7 @@ export function PdfEditor() {
 
       <NewPdfDialog open={newPdfDialogOpen} onOpenChange={setNewPdfDialogOpen} onCreate={handleCreateNew} />
 
-      <OcrDialog
-        open={ocrDialogOpen}
-        onOpenChange={setOcrDialogOpen}
-        doc={doc}
-        pages={store.pages}
-        currentPageIndex={currentPageIndex}
-        onApplySearchable={handleApplySearchable}
-      />
+      {ocrRunning && <OcrProgressOverlay progress={ocrProgress} />}
 
       {pageOrganizerOpen && doc && (
         <PageOrganizerView
