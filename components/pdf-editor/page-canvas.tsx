@@ -15,6 +15,31 @@ import { makeId } from "@/lib/id"
 import type { SearchRect } from "@/lib/pdf-search"
 import { AnnotationView } from "./annotation-view"
 import { cn } from "@/lib/utils"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu"
+import {
+  Highlighter,
+  LayoutGrid,
+  MessageSquarePlus,
+  MousePointer2,
+  PenTool,
+  RotateCcw,
+  RotateCw,
+  Trash2,
+  Type as TypeIcon,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react"
 
 export interface PageSearchMatch {
   key: string
@@ -47,6 +72,12 @@ interface PageCanvasProps {
   onRemoveAnnotation: (id: string) => void
   onRequestSignaturePlacement: () => void
   onRequestOpenComments: (id: string) => void
+  onToolChange: (tool: ToolId) => void
+  onZoomIn: () => void
+  onZoomOut: () => void
+  onRotatePage: (delta: 90 | -90) => void
+  onDeleteAnnotation: (id: string) => void
+  onOpenPageOrganizer: () => void
   registerContainer: (originalIndex: number, el: HTMLDivElement | null) => void
 }
 
@@ -70,6 +101,12 @@ export function PageCanvas({
   onRemoveAnnotation,
   onRequestSignaturePlacement,
   onRequestOpenComments,
+  onToolChange,
+  onZoomIn,
+  onZoomOut,
+  onRotatePage,
+  onDeleteAnnotation,
+  onOpenPageOrganizer,
   registerContainer,
 }: PageCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -77,6 +114,8 @@ export function PageCanvas({
   const overlayRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<PageViewportLike | null>(null)
+  // PDF-space point of the most recent right-click, used by "Añadir comentario aquí".
+  const contextPointRef = useRef<Point | null>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [editingTextId, setEditingTextId] = useState<string | null>(null)
   const [draftShape, setDraftShape] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
@@ -504,13 +543,52 @@ export function PageCanvas({
     | (Annotation & { type: "text" })
     | undefined
 
+  // Record where the user right-clicked so the menu can act on that exact spot.
+  const handleContextMenuCapture = useCallback(
+    (e: React.MouseEvent) => {
+      const viewport = viewportRef.current
+      if (!viewport) return
+      const pt = getLocalPoint(e)
+      contextPointRef.current = toPdfPoint(viewport, pt.x, pt.y)
+    },
+    [getLocalPoint],
+  )
+
+  const handleAddCommentHere = useCallback(() => {
+    const pdfPt = contextPointRef.current
+    if (!pdfPt) return
+    const id = makeId("cmt")
+    onAddAnnotation({
+      id,
+      pageIndex: pageState.originalIndex,
+      color: "#d97706",
+      createdAt: Date.now(),
+      type: "comment",
+      x: pdfPt.x,
+      y: pdfPt.y,
+      messages: [],
+      resolved: false,
+    })
+    onSelectAnnotation(id)
+    onRequestOpenComments(id)
+  }, [onAddAnnotation, onSelectAnnotation, onRequestOpenComments, pageState.originalIndex])
+
+  // The annotation targeted by annotation-specific menu items (only if it's on this page).
+  const selectedOnPage = annotations.find((a) => a.id === selectedId)
+
   return (
-    <div
-      ref={setRef}
-      data-page-index={pageState.originalIndex}
-      className="relative mx-auto bg-page shadow-[0_1px_2px_rgba(0,0,0,0.06),0_8px_24px_rgba(0,0,0,0.10)]"
-      style={{ width: size.width || undefined, height: size.height || undefined }}
-    >
+    <ContextMenu>
+      <ContextMenuTrigger
+        render={
+          <div
+            ref={setRef}
+            data-page-index={pageState.originalIndex}
+            className="relative mx-auto bg-page shadow-[0_1px_2px_rgba(0,0,0,0.06),0_8px_24px_rgba(0,0,0,0.10)]"
+            style={{ width: size.width || undefined, height: size.height || undefined }}
+            onContextMenu={handleContextMenuCapture}
+          />
+        }
+      >
       <canvas ref={canvasRef} className="block" />
       <div
         ref={textLayerRef}
@@ -630,7 +708,87 @@ export function PageCanvas({
       <div className="pointer-events-none absolute -top-6 left-0 text-xs font-medium text-muted-foreground">
         Página {displayNumber}
       </div>
-    </div>
+      </ContextMenuTrigger>
+
+      <ContextMenuContent>
+        <ContextMenuItem onClick={handleAddCommentHere}>
+          <MessageSquarePlus />
+          Añadir comentario aquí
+        </ContextMenuItem>
+
+        {selectedOnPage && (
+          <>
+            <ContextMenuSeparator />
+            {selectedOnPage.type === "comment" && (
+              <ContextMenuItem onClick={() => onRequestOpenComments(selectedOnPage.id)}>
+                <MessageSquarePlus />
+                Abrir comentario
+              </ContextMenuItem>
+            )}
+            <ContextMenuItem variant="destructive" onClick={() => onDeleteAnnotation(selectedOnPage.id)}>
+              <Trash2 />
+              Eliminar {selectedOnPage.type === "comment" ? "comentario" : "anotación"}
+            </ContextMenuItem>
+          </>
+        )}
+
+        <ContextMenuSeparator />
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>
+            <MousePointer2 />
+            Herramienta
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent>
+            <ContextMenuRadioGroup value={tool} onValueChange={(v) => onToolChange(v as ToolId)}>
+              <ContextMenuRadioItem value="select">
+                <MousePointer2 />
+                Seleccionar
+              </ContextMenuRadioItem>
+              <ContextMenuRadioItem value="comment">
+                <MessageSquarePlus />
+                Comentar
+              </ContextMenuRadioItem>
+              <ContextMenuRadioItem value="highlight">
+                <Highlighter />
+                Resaltar
+              </ContextMenuRadioItem>
+              <ContextMenuRadioItem value="text">
+                <TypeIcon />
+                Texto
+              </ContextMenuRadioItem>
+              <ContextMenuRadioItem value="ink">
+                <PenTool />
+                Dibujar
+              </ContextMenuRadioItem>
+            </ContextMenuRadioGroup>
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => onRotatePage(90)}>
+          <RotateCw />
+          Girar página a la derecha
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => onRotatePage(-90)}>
+          <RotateCcw />
+          Girar página a la izquierda
+        </ContextMenuItem>
+        <ContextMenuItem onClick={onOpenPageOrganizer}>
+          <LayoutGrid />
+          Organizar páginas
+        </ContextMenuItem>
+
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={onZoomIn}>
+          <ZoomIn />
+          Acercar
+        </ContextMenuItem>
+        <ContextMenuItem onClick={onZoomOut}>
+          <ZoomOut />
+          Alejar
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }
 

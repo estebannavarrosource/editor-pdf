@@ -539,6 +539,13 @@ export function PdfEditor() {
     [store],
   )
 
+  const handleRotateSinglePage = useCallback(
+    (originalIndex: number, delta: 90 | -90) => {
+      store.rotatePages([originalIndex], delta)
+    },
+    [store],
+  )
+
   const handleBulkDelete = useCallback(
     (indices: number[]) => {
       const originalIndexes = indices.map((i) => store.pages[i]?.originalIndex).filter((i): i is number => i !== undefined)
@@ -1043,6 +1050,11 @@ export function PdfEditor() {
             onRemoveAnnotation={handleRemoveAnnotation}
             onRequestSignaturePlacement={() => setSignatureDialogOpen(true)}
             onRequestOpenComments={handleOpenComments}
+            onToolChange={setTool}
+            onZoomIn={zoomIn}
+            onZoomOut={zoomOut}
+            onRotatePage={handleRotateSinglePage}
+            onOpenPageOrganizer={() => setPageOrganizerOpen(true)}
             registerScrollContainer={registerScrollContainer}
             registerPageContainer={registerPageContainer}
           />

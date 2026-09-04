@@ -24,6 +24,11 @@ interface PageScrollerProps {
   onRemoveAnnotation: (originalIndex: number, id: string) => void
   onRequestSignaturePlacement: () => void
   onRequestOpenComments: (id: string) => void
+  onToolChange: (tool: ToolId) => void
+  onZoomIn: () => void
+  onZoomOut: () => void
+  onRotatePage: (originalIndex: number, delta: 90 | -90) => void
+  onOpenPageOrganizer: () => void
   registerScrollContainer: (el: HTMLDivElement | null) => void
   registerPageContainer: (originalIndex: number, el: HTMLDivElement | null) => void
 }
@@ -47,6 +52,11 @@ export function PageScroller({
   onRemoveAnnotation,
   onRequestSignaturePlacement,
   onRequestOpenComments,
+  onToolChange,
+  onZoomIn,
+  onZoomOut,
+  onRotatePage,
+  onOpenPageOrganizer,
   registerScrollContainer,
   registerPageContainer,
 }: PageScrollerProps) {
@@ -90,6 +100,12 @@ export function PageScroller({
               onRemoveAnnotation={(id) => onRemoveAnnotation(pageState.originalIndex, id)}
               onRequestSignaturePlacement={onRequestSignaturePlacement}
               onRequestOpenComments={onRequestOpenComments}
+              onToolChange={onToolChange}
+              onZoomIn={onZoomIn}
+              onZoomOut={onZoomOut}
+              onRotatePage={(delta) => onRotatePage(pageState.originalIndex, delta)}
+              onDeleteAnnotation={(id) => onRemoveAnnotation(pageState.originalIndex, id)}
+              onOpenPageOrganizer={onOpenPageOrganizer}
               registerContainer={registerPageContainer}
             />
           )
