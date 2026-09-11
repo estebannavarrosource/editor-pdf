@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { TextLayer } from "pdfjs-dist"
-import type { PdfjsDocument } from "@/lib/pdfjs"
+import type { PdfjsDocument, PdfjsPage } from "@/lib/pdfjs"
 import type { Annotation, PageState, Point, ToolId } from "@/lib/pdf-types"
 import {
   getTotalRotation,
@@ -146,6 +146,13 @@ export function PageCanvas({
   useEffect(() => {
     let cancelled = false
     let textLayerInstance: TextLayer | null = null
+    // Track the in-flight render so a re-run (scale/rotation change, or React
+    // Strict Mode's dev-only double-invoke) can properly cancel it instead of
+    // letting it keep painting the shared canvas in the background. Without
+    // this, two overlapping page.render() calls race over the same page's
+    // image cache and scanned (image-only) pages can come out blank because
+    // the slower-to-decode image loses the race and never gets painted.
+    let renderTask: ReturnType<PdfjsPage["render"]> | null = null
 
     async function render() {
       const page = await doc.getPage(pageState.originalIndex + 1)
@@ -165,7 +172,7 @@ export function PageCanvas({
       if (!ctx) return
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-      const renderTask = page.render({ canvasContext: ctx, canvas, viewport })
+      renderTask = page.render({ canvasContext: ctx, canvas, viewport })
       await renderTask.promise
       if (cancelled) return
 
@@ -184,10 +191,14 @@ export function PageCanvas({
       }
     }
 
-    render().catch((e) => console.error("[v0] page render failed", e))
+    render().catch((e) => {
+      // Expected when cancel() below interrupts an in-flight render; not a real error.
+      if (e?.name !== "RenderingCancelledException") console.error("[v0] page render failed", e)
+    })
 
     return () => {
       cancelled = true
+      renderTask?.cancel()
       textLayerInstance?.cancel()
     }
   }, [doc, pageState.originalIndex, pageState.rotation, scale])
