@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { TextLayer } from "pdfjs-dist"
-import type { PdfjsDocument, PdfjsPage } from "@/lib/pdfjs"
+import type { PdfjsDocument } from "@/lib/pdfjs"
 import type { Annotation, PageState, Point, ToolId } from "@/lib/pdf-types"
 import {
   getTotalRotation,
@@ -114,6 +114,10 @@ export function PageCanvas({
   const overlayRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<PageViewportLike | null>(null)
+  // Serializes successive page.render() calls for this page instance so they
+  // never overlap. See the render effect below for why we never cancel a
+  // pdf.js RenderTask directly.
+  const pageRenderChainRef = useRef<Promise<void>>(Promise.resolve())
   // PDF-space point of the most recent right-click, used by "Añadir comentario aquí".
   const contextPointRef = useRef<Point | null>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
@@ -143,23 +147,34 @@ export function PageCanvas({
   const strokeRef = useRef<Point[]>([])
 
   // Render page + text layer whenever scale/rotation changes.
+  //
+  // IMPORTANT: never call the pdf.js RenderTask's cancel() here. pdf.js's
+  // worker keeps decoding images asynchronously and reports them back via an
+  // "obj" message; if that message arrives after cancel() has torn down the
+  // page's render intent, pdf.js silently drops the decoded image instead of
+  // resolving it (see PDFObjects/_intentStates handling in pdf.js's
+  // WorkerTransport). That leaves the image's promise permanently unresolved
+  // in the page's shared object cache, so every future render of that page —
+  // even a brand new one — paints blank for that image and logs "Dependent
+  // image isn't ready yet" forever. This is especially visible on scanned
+  // (image-only) pages, where the image is slow enough to decode that a
+  // cancel (e.g. from React Strict Mode's dev-only double-invoke, or a rapid
+  // scale/rotation change) reliably loses the race.
+  //
+  // Instead we serialize renders through a per-instance promise chain so a
+  // new render always waits for the previous one to fully settle before
+  // starting. A `cancelled` flag lets a stale render bail out early (before
+  // even calling page.render()) or skip its now-irrelevant side effects
+  // (setSize, text layer) without ever touching pdf.js's own cancellation.
   useEffect(() => {
     let cancelled = false
-    let textLayerInstance: TextLayer | null = null
-    // Track the in-flight render so a re-run (scale/rotation change, or React
-    // Strict Mode's dev-only double-invoke) can properly cancel it instead of
-    // letting it keep painting the shared canvas in the background. Without
-    // this, two overlapping page.render() calls race over the same page's
-    // image cache and scanned (image-only) pages can come out blank because
-    // the slower-to-decode image loses the race and never gets painted.
-    let renderTask: ReturnType<PdfjsPage["render"]> | null = null
 
     async function render() {
+      if (cancelled) return
       const page = await doc.getPage(pageState.originalIndex + 1)
       if (cancelled) return
       const totalRotation = getTotalRotation(page, pageState.rotation)
       const viewport = page.getViewport({ scale, rotation: totalRotation })
-      viewportRef.current = viewport
 
       const canvas = canvasRef.current
       if (!canvas) return
@@ -172,17 +187,17 @@ export function PageCanvas({
       if (!ctx) return
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-      renderTask = page.render({ canvasContext: ctx, canvas, viewport })
-      await renderTask.promise
+      await page.render({ canvasContext: ctx, canvas, viewport }).promise
       if (cancelled) return
 
+      viewportRef.current = viewport
       setSize({ width: viewport.width, height: viewport.height })
 
       if (textLayerRef.current) {
         textLayerRef.current.innerHTML = ""
         const textContent = await page.getTextContent()
         if (cancelled) return
-        textLayerInstance = new TextLayer({
+        const textLayerInstance = new TextLayer({
           textContentSource: textContent as any,
           container: textLayerRef.current,
           viewport,
@@ -191,15 +206,13 @@ export function PageCanvas({
       }
     }
 
-    render().catch((e) => {
-      // Expected when cancel() below interrupts an in-flight render; not a real error.
-      if (e?.name !== "RenderingCancelledException") console.error("[v0] page render failed", e)
+    pageRenderChainRef.current = pageRenderChainRef.current.then(() => {
+      if (cancelled) return
+      return render().catch((e) => console.error("[v0] page render failed", e))
     })
 
     return () => {
       cancelled = true
-      renderTask?.cancel()
-      textLayerInstance?.cancel()
     }
   }, [doc, pageState.originalIndex, pageState.rotation, scale])
 

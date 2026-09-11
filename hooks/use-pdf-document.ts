@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import type { PDFDocumentLoadingTask } from "pdfjs-dist"
-import { getPdfjs, type PdfjsDocument } from "@/lib/pdfjs"
+import { getPdfjs, PDFJS_DOCUMENT_OPTIONS, type PdfjsDocument } from "@/lib/pdfjs"
 import type { PageState } from "@/lib/pdf-types"
 
 interface UsePdfDocumentResult {
@@ -35,7 +35,7 @@ export function usePdfDocument(bytes: ArrayBuffer | null, version: number): UseP
       try {
         const pdfjs = getPdfjs()
         const copy = bytes!.slice(0)
-        const loadingTask = pdfjs.getDocument({ data: new Uint8Array(copy) })
+        const loadingTask = pdfjs.getDocument({ data: new Uint8Array(copy), ...PDFJS_DOCUMENT_OPTIONS })
         const pdfDoc = await loadingTask.promise
         if (cancelled) return
 
