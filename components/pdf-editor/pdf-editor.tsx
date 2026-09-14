@@ -76,6 +76,10 @@ export function PdfEditor() {
   const [formFields, setFormFields] = useState<FormFieldDescriptor[]>([])
   const [exporting, setExporting] = useState(false)
   const [ocrRunning, setOcrRunning] = useState(false)
+  // Shown while combining/parsing files picked by the user (import, append,
+  // insert, replace). These run pdf-lib operations that can take a while for
+  // large or numerous files, so without this the app can look unresponsive.
+  const [busyMessage, setBusyMessage] = useState<string | null>(null)
   const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null)
   const [newPdfDialogOpen, setNewPdfDialogOpen] = useState(false)
   const [currentPageIndex, setCurrentPageIndex] = useState(0)
@@ -292,10 +296,16 @@ export function PdfEditor() {
     setLoadError(null)
     const valid = files.filter(isSupportedImportFile)
     if (valid.length === 0) return
+    const isSingleNativePdf = valid.length === 1 && valid[0].type === "application/pdf"
+    if (!isSingleNativePdf) {
+      setBusyMessage(
+        valid.length === 1 ? "Importando archivo..." : `Combinando ${valid.length} archivos...`,
+      )
+    }
     try {
       let buf: ArrayBuffer
       let name: string
-      if (valid.length === 1 && valid[0].type === "application/pdf") {
+      if (isSingleNativePdf) {
         // Keep the original bytes so AcroForm fields are preserved.
         buf = await valid[0].arrayBuffer()
         name = valid[0].name
@@ -318,6 +328,8 @@ export function PdfEditor() {
     } catch (e) {
       console.error("[v0] import failed", e)
       setLoadError("No se pudieron importar los archivos seleccionados.")
+    } finally {
+      setBusyMessage(null)
     }
   }, [])
 
@@ -344,6 +356,7 @@ export function PdfEditor() {
       if (!fileBytes) return
       const valid = files.filter(isSupportedImportFile)
       if (valid.length === 0) return
+      setBusyMessage(valid.length === 1 ? "Anexando archivo..." : `Anexando ${valid.length} archivos...`)
       try {
         const bytes = await appendFilesToPdf(fileBytes.slice(0), valid)
         setFileBytes(toArrayBuffer(bytes))
@@ -352,6 +365,8 @@ export function PdfEditor() {
       } catch (e) {
         console.error("[v0] append failed", e)
         toast.error("No se pudieron anexar los archivos")
+      } finally {
+        setBusyMessage(null)
       }
     },
     [fileBytes],
@@ -471,6 +486,7 @@ export function PdfEditor() {
       if (!fileBytes) return
       const valid = files.filter(isSupportedImportFile)
       if (valid.length === 0) return
+      setBusyMessage(valid.length === 1 ? "Insertando archivo..." : `Insertando ${valid.length} archivos...`)
       try {
         const result = await insertFilesAtPosition(fileBytes.slice(0), store.pages, valid, afterIndex)
         pendingInitRef.current = { pages: result.pages, annotations: store.annotations }
@@ -480,6 +496,8 @@ export function PdfEditor() {
       } catch (e) {
         console.error("[v0] insert files failed", e)
         toast.error("No se pudieron insertar las páginas")
+      } finally {
+        setBusyMessage(null)
       }
     },
     [fileBytes, store.pages, store.annotations],
@@ -490,6 +508,7 @@ export function PdfEditor() {
       if (!fileBytes) return
       const valid = files.filter(isSupportedImportFile)
       if (valid.length === 0) return
+      setBusyMessage("Reemplazando página...")
       try {
         const result = await replacePageWithFile(fileBytes.slice(0), store.pages, store.annotations, index, valid)
         pendingInitRef.current = { pages: result.pages, annotations: result.annotations }
@@ -499,6 +518,8 @@ export function PdfEditor() {
       } catch (e) {
         console.error("[v0] replace page failed", e)
         toast.error("No se pudo reemplazar la página")
+      } finally {
+        setBusyMessage(null)
       }
     },
     [fileBytes, store.pages, store.annotations],
@@ -894,6 +915,16 @@ export function PdfEditor() {
     [fileBytes, doc, fileName, store.pages, annotationsByPageMap],
   )
 
+  const busyOverlay = busyMessage && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-card px-8 py-6 text-center shadow-lg">
+        <Spinner className="size-6" />
+        <p className="text-sm font-medium">{busyMessage}</p>
+        <p className="text-xs text-muted-foreground">Esto puede tardar unos segundos con archivos grandes.</p>
+      </div>
+    </div>
+  )
+
   if (!fileBytes) {
     return (
       <>
@@ -904,12 +935,14 @@ export function PdfEditor() {
           error={loadError}
         />
         <NewPdfDialog open={newPdfDialogOpen} onOpenChange={setNewPdfDialogOpen} onCreate={handleCreateNew} />
+        {busyOverlay}
       </>
     )
   }
 
   return (
     <div className="flex h-dvh flex-col">
+      {busyOverlay}
       <EditorToolbar
         fileName={fileName}
         tool={tool}
