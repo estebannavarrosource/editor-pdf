@@ -24,6 +24,7 @@ import {
   FileSignature,
   FileDown,
   ScanText,
+  Minimize2,
   type LucideIcon,
 } from "lucide-react"
 import type { ToolId } from "@/lib/pdf-types"
@@ -38,6 +39,7 @@ type ToolAction =
   | "signature"
   | "form"
   | "export"
+  | "compress"
   | "ocr"
 
 interface ToolItem {
@@ -100,7 +102,10 @@ const CATEGORIES: ToolCategory[] = [
   {
     label: "Exportar",
     accent: "text-teal-600",
-    items: [{ id: "export", icon: FileDown, label: "Exportar como...", action: "export" }],
+    items: [
+      { id: "export", icon: FileDown, label: "Exportar como...", action: "export" },
+      { id: "compress", icon: Minimize2, label: "Reducir tamaño del PDF", action: "compress" },
+    ],
   },
   {
     label: "Reconocimiento",
@@ -119,6 +124,7 @@ interface ToolsPanelProps {
   onOpenSignature: () => void
   onOpenForm: () => void
   onOpenExport: () => void
+  onOpenCompress: () => void
   onRunOcr: () => void
   onOpenPageOrganizer: () => void
 }
@@ -133,6 +139,7 @@ export function ToolsPanel({
   onOpenSignature,
   onOpenForm,
   onOpenExport,
+  onOpenCompress,
   onRunOcr,
   onOpenPageOrganizer,
 }: ToolsPanelProps) {
@@ -160,6 +167,9 @@ export function ToolsPanel({
         break
       case "export":
         onOpenExport()
+        break
+      case "compress":
+        onOpenCompress()
         break
       case "ocr":
         onRunOcr()

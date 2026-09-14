@@ -25,6 +25,7 @@ import {
   type NewPdfOptions,
 } from "@/lib/pdf-pages"
 import { splitBakedPdf, zipPdfParts } from "@/lib/pdf-split"
+import { compressPdf, type CompressionLevel } from "@/lib/pdf-compress"
 import { saveSession, loadSession } from "@/lib/pdf-session"
 import { HomeScreen } from "./home-screen"
 import { EditorToolbar } from "./editor-toolbar"
@@ -34,6 +35,7 @@ import { PageScroller } from "./page-scroller"
 import { SignatureDialog } from "./signature-dialog"
 import { FormFillSheet } from "./form-fill-sheet"
 import { ExportDialog, type ExportFormat } from "./export-dialog"
+import { CompressDialog } from "./compress-dialog"
 import { OcrProgressOverlay } from "./ocr-progress-overlay"
 import { NewPdfDialog } from "./new-pdf-dialog"
 import { SearchBar } from "./search-bar"
@@ -72,6 +74,7 @@ export function PdfEditor() {
   const [activeSignature, setActiveSignature] = useState<string | null>(null)
   const [signatureDialogOpen, setSignatureDialogOpen] = useState(false)
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
+  const [compressDialogOpen, setCompressDialogOpen] = useState(false)
   const [formSheetOpen, setFormSheetOpen] = useState(false)
   const [formFields, setFormFields] = useState<FormFieldDescriptor[]>([])
   const [exporting, setExporting] = useState(false)
@@ -915,6 +918,43 @@ export function PdfEditor() {
     [fileBytes, doc, fileName, store.pages, annotationsByPageMap],
   )
 
+  const handleCompress = useCallback(
+    async (level: CompressionLevel) => {
+      if (!fileBytes) return
+      const baseName = fileName?.replace(/\.pdf$/i, "") || "documento"
+      setBusyMessage("Comprimiendo documento...")
+      try {
+        const baked = await buildExportedPdf({
+          originalBytes: fileBytes.slice(0),
+          pages: store.pages,
+          annotationsByPage: annotationsByPageMap,
+        })
+        const result = await compressPdf(toArrayBuffer(baked), level)
+        saveAs(new Blob([result.bytes], { type: "application/pdf" }), `${baseName}-comprimido.pdf`)
+
+        const savedPercent = Math.max(
+          0,
+          Math.round((1 - result.compressedSize / result.originalSize) * 100),
+        )
+        const formatKb = (bytes: number) => `${(bytes / 1024).toFixed(0)} KB`
+        if (savedPercent > 0) {
+          toast.success(
+            `Documento comprimido: ${formatKb(result.originalSize)} → ${formatKb(result.compressedSize)} (-${savedPercent}%)`,
+          )
+        } else {
+          toast.info("El documento ya estaba optimizado; el tamaño no varió de forma significativa")
+        }
+      } catch (e) {
+        console.error("[v0] compress failed", e)
+        toast.error("No se pudo comprimir el documento")
+        throw e
+      } finally {
+        setBusyMessage(null)
+      }
+    },
+    [fileBytes, fileName, store.pages, annotationsByPageMap],
+  )
+
   const busyOverlay = busyMessage && (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
       <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-card px-8 py-6 text-center shadow-lg">
@@ -1035,6 +1075,7 @@ export function PdfEditor() {
             onOpenSignature={() => setSignatureDialogOpen(true)}
             onOpenForm={() => setFormSheetOpen(true)}
             onOpenExport={() => setExportDialogOpen(true)}
+            onOpenCompress={() => setCompressDialogOpen(true)}
             onRunOcr={handleRunOcr}
             onOpenPageOrganizer={() => setPageOrganizerOpen(true)}
           />
@@ -1128,6 +1169,8 @@ export function PdfEditor() {
       />
 
       <ExportDialog open={exportDialogOpen} onOpenChange={setExportDialogOpen} onExport={handleExport} />
+
+      <CompressDialog open={compressDialogOpen} onOpenChange={setCompressDialogOpen} onCompress={handleCompress} />
 
       <NewPdfDialog open={newPdfDialogOpen} onOpenChange={setNewPdfDialogOpen} onCreate={handleCreateNew} />
 
