@@ -144,6 +144,32 @@ export function PageOrganizerView({
     [anchor],
   )
 
+  const handleToggleSelect = useCallback((index: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+    setAnchor(index)
+  }, [])
+
+  const selectCurrentBlock = useCallback(() => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      const end = Math.min(blockStart + PAGES_PER_BLOCK, pages.length)
+      for (let i = blockStart; i < end; i++) {
+        if (!pages[i].deleted) next.add(i)
+      }
+      return next
+    })
+  }, [blockStart, pages])
+
+  const selectedInBlock = useMemo(
+    () => selectedList.filter((i) => i >= blockStart && i < blockStart + PAGES_PER_BLOCK).length,
+    [selectedList, blockStart],
+  )
+
   const handleDragStart = useCallback(
     (index: number) => (e: DragEvent) => {
       e.dataTransfer.effectAllowed = "move"
@@ -485,6 +511,8 @@ export function PageOrganizerView({
               pageState={page}
               index={index}
               selected={selected.has(index)}
+              selectionActive={selected.size > 0}
+              onToggleSelect={handleToggleSelect}
               isDragging={dragIndices?.includes(index) ?? false}
               insertBefore={dropIndex === index && dragIndices !== null}
               insertAfter={dropIndex === pages.length && index === pages.length - 1 && dragIndices !== null}
@@ -510,6 +538,23 @@ export function PageOrganizerView({
           })}
         </div>
       </ScrollArea>
+
+      <div className="flex flex-wrap items-center gap-2 border-t border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
+        <span aria-live="polite">
+          {selectedList.length > 0
+            ? `${selectedList.length} seleccionada(s) en total · ${selectedInBlock} en esta página`
+            : "Marca las casillas o usa Ctrl/Shift + clic para seleccionar varias; la selección se conserva al cambiar de página"}
+        </span>
+        <div className="flex-1" />
+        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={selectCurrentBlock}>
+          Seleccionar esta página
+        </Button>
+        {selectedList.length > 0 && (
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={clearSelection}>
+            Limpiar selección
+          </Button>
+        )}
+      </div>
 
       <PageOrganizerPagination
         currentPage={safeBlock}

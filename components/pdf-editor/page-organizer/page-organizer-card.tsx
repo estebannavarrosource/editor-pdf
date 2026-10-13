@@ -1,7 +1,7 @@
 "use client"
 
 import type { DragEvent, MouseEvent } from "react"
-import { Copy, FilePlus, MoreVertical, Replace, RotateCcw, RotateCw, Trash2, Undo2 } from "lucide-react"
+import { Check, Copy, FilePlus, MoreVertical, Replace, RotateCcw, RotateCw, Trash2, Undo2 } from "lucide-react"
 import type { PdfjsDocument } from "@/lib/pdfjs"
 import type { PageState } from "@/lib/pdf-types"
 import { Button } from "@/components/ui/button"
@@ -15,10 +15,13 @@ interface PageOrganizerCardProps {
   pageState: PageState
   index: number
   selected: boolean
+  /** True when at least one page (on any block) is selected, so checkboxes stay visible. */
+  selectionActive: boolean
   isDragging: boolean
   insertBefore: boolean
   insertAfter: boolean
   onSelect: (index: number, e: MouseEvent) => void
+  onToggleSelect: (index: number) => void
   onRotate: (delta: 90 | -90) => void
   onToggleDelete: () => void
   onDuplicate: () => void
@@ -36,10 +39,12 @@ export function PageOrganizerCard({
   pageState,
   index,
   selected,
+  selectionActive,
   isDragging,
   insertBefore,
   insertAfter,
   onSelect,
+  onToggleSelect,
   onRotate,
   onToggleDelete,
   onDuplicate,
@@ -94,6 +99,23 @@ export function PageOrganizerCard({
         )}
       >
         <PageThumbnail doc={doc} pageState={pageState} targetWidth={220} />
+      </button>
+
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={selected}
+        aria-label={`${selected ? "Quitar de la selección" : "Seleccionar"} página ${index + 1}`}
+        onClick={() => onToggleSelect(index)}
+        className={cn(
+          "absolute top-2 left-2 flex size-5 items-center justify-center rounded border shadow-sm transition-opacity",
+          selected
+            ? "border-primary bg-primary text-primary-foreground opacity-100"
+            : "border-border bg-background text-transparent hover:border-primary",
+          !selected && (selectionActive ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"),
+        )}
+      >
+        <Check className="size-3.5" strokeWidth={3} />
       </button>
 
       <div className="mt-1.5 flex items-center justify-center">
