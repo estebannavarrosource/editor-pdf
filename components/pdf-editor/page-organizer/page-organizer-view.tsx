@@ -25,6 +25,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { PageOrganizerCard } from "./page-organizer-card"
+import { PageOrganizerPagination } from "./page-organizer-pagination"
+
+const PAGES_PER_BLOCK = 40
 
 interface PageOrganizerViewProps {
   doc: PdfjsDocument
@@ -76,6 +79,26 @@ export function PageOrganizerView({
   const [dragIndices, setDragIndices] = useState<number[] | null>(null)
   // Insertion boundary the dragged pages will land at: 0..pages.length.
   const [dropIndex, setDropIndex] = useState<number | null>(null)
+
+  const [currentBlock, setCurrentBlock] = useState(1)
+  const gridRef = useRef<HTMLDivElement>(null)
+
+  const totalBlocks = Math.max(1, Math.ceil(pages.length / PAGES_PER_BLOCK))
+  // Clamp so deleting/extracting pages never leaves us on a block that no longer exists.
+  const safeBlock = Math.min(currentBlock, totalBlocks)
+  const blockStart = (safeBlock - 1) * PAGES_PER_BLOCK
+  const visiblePages = useMemo(
+    () => pages.slice(blockStart, blockStart + PAGES_PER_BLOCK),
+    [pages, blockStart],
+  )
+
+  const goToBlock = useCallback(
+    (block: number) => {
+      setCurrentBlock(Math.min(Math.max(1, block), totalBlocks))
+      gridRef.current?.scrollIntoView({ block: "start" })
+    },
+    [totalBlocks],
+  )
 
   const insertInputRef = useRef<HTMLInputElement>(null)
   const replaceInputRef = useRef<HTMLInputElement>(null)
@@ -436,8 +459,9 @@ export function PageOrganizerView({
         </Button>
       </header>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         <div
+          ref={gridRef}
           className="grid gap-6 p-6"
           style={{ gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))" }}
           onClick={(e) => {
@@ -452,7 +476,9 @@ export function PageOrganizerView({
             commitDrop()
           }}
         >
-          {pages.map((page, index) => (
+          {visiblePages.map((page, offset) => {
+            const index = blockStart + offset
+            return (
             <PageOrganizerCard
               key={page.originalIndex}
               doc={doc}
@@ -480,9 +506,19 @@ export function PageOrganizerView({
                 commitDrop()
               }}
             />
-          ))}
+            )
+          })}
         </div>
       </ScrollArea>
+
+      <PageOrganizerPagination
+        currentPage={safeBlock}
+        totalPages={totalBlocks}
+        pageSize={PAGES_PER_BLOCK}
+        totalItems={pages.length}
+        isDragging={dragIndices !== null}
+        onChange={goToBlock}
+      />
     </div>
   )
 }
